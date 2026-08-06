@@ -1,13 +1,23 @@
 import time
 from typing import Dict, Any
 
-# Import models directly from models.py
-from models import (
-    OCSFAuthenticationModel,
-    UserModel,
-    DeviceModel,
-    ActorModel
-)
+# ✅ FIX: Updated import path to locate models inside src package
+try:
+    from src.models import (
+        OCSFAuthenticationModel,
+        UserModel,
+        DeviceModel,
+        ActorModel
+    )
+except ModuleNotFoundError:
+    # Fallback if models.py is located directly inside src/adapters/
+    from .models import (
+        OCSFAuthenticationModel,
+        UserModel,
+        DeviceModel,
+        ActorModel
+    )
+
 
 class SplunkOCSFAdapter:
     """
@@ -34,9 +44,9 @@ class SplunkOCSFAdapter:
         """
         # 1. Map Action -> Status ID (1 = Success, 2 = Failure, 99 = Unknown in standard OCSF)
         raw_action = str(payload.get("action", "")).lower()
-        if raw_action in ["success", "successful", "succeeded"]:
+        if raw_action in ["success", "successful", "succeeded", "allowed"]:
             status_id = 1
-        elif raw_action in ["failure", "failed", "error"]:
+        elif raw_action in ["failure", "failed", "error", "blocked"]:
             status_id = 2
         else:
             status_id = 99
@@ -58,7 +68,7 @@ class SplunkOCSFAdapter:
             activity_id=1,        # 1 = Logon in OCSF Authentication
             category_uid=3,       # 3 = Identity & Access Management
             class_uid=3002,       # 3002 = Authentication
-            severity_id=1,       # 1 = Informational / Low
+            severity_id=1,        # 1 = Informational / Low
             status_id=status_id,
             user=user_obj,
             device=device_obj,
