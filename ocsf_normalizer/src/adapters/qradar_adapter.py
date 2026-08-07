@@ -3,6 +3,14 @@ from typing import Dict, Any
 from datetime import datetime, timezone
 from src.adapters.base_adapter import BaseAdapter
 from src.models.ocsf_models import OCSFAuthenticationEvent, FieldProvenance
+from src.normalizer.complex_objects import (
+    build_actor,
+    build_device,
+    build_endpoint,
+    build_file,
+    build_process,
+    build_user,
+)
 
 
 class QRadarAdapter(BaseAdapter):
@@ -46,30 +54,46 @@ class QRadarAdapter(BaseAdapter):
         fallback_time = int(datetime.now(timezone.utc).timestamp() * 1000)
         raw_time = extract_field("starttime", fallback_key="devicetime", default=fallback_time)
 
-        # 4. Extract Endpoints & User
-        src_ip = extract_field("sourceip")
-        src_port = extract_field("sourceport")
-        dst_ip = extract_field("destinationip")
-        dst_port = extract_field("destinationport")
-        username = extract_field("username", fallback_key="identityusername")
+        # 4. Extract Endpoints & User (complex objects)
+        user = build_user(
+            raw_event,
+            {"name": ["username", "identityusername"], "uid": "useruid"},
+            provenance,
+        )
+        src_endpoint = build_endpoint(
+            raw_event,
+            {"ip": "sourceip", "port": "sourceport"},
+            provenance,
+        )
+        dst_endpoint = build_endpoint(
+            raw_event,
+            {"ip": "destinationip", "port": "destinationport"},
+            provenance,
+        )
 
-        src_ep = {}
-        if src_ip:
-            src_ep["ip"] = src_ip
-            if src_port is not None:
-                try:
-                    src_ep["port"] = int(src_port)
-                except (ValueError, TypeError):
-                    pass
+        # 5. Device + Actor
+        device = build_device(
+            raw_event,
+            {"ip": ["deviceip", "sourceip"], "name": "devicename", "type_id": "devicetype"},
+            provenance,
+        )
+        actor = build_actor(
+            raw_event,
+            {"user": {"name": ["username", "identityusername"]}, "type_id": "actortypeid"},
+            provenance,
+        )
 
-        dst_ep = {}
-        if dst_ip:
-            dst_ep["ip"] = dst_ip
-            if dst_port is not None:
-                try:
-                    dst_ep["port"] = int(dst_port)
-                except (ValueError, TypeError):
-                    pass
+        # 6. Process + File (if present in AQL event)
+        process = build_process(
+            raw_event,
+            {"pid": "processid", "name": "processname", "path": "processpath"},
+            provenance,
+        )
+        file = build_file(
+            raw_event,
+            {"name": "filename", "path": "filepath", "size": "filesize"},
+            provenance,
+        )
 
         return OCSFAuthenticationEvent(
             class_uid=3001,
@@ -78,10 +102,14 @@ class QRadarAdapter(BaseAdapter):
             severity_id=severity_id,
             status_id=status_id,
             time=int(raw_time),
-            user={"name": username} if username else {},
-            src_endpoint=src_ep,
-            dst_endpoint=dst_ep,
-            provenance=provenance
+            user=user,
+            src_endpoint=src_endpoint,
+            dst_endpoint=dst_endpoint,
+            device=device,
+            actor=actor,
+            process=process,
+            file=file,
+            provenance=provenance,
         )
 
     def _map_severity(self, mag: int) -> int:
@@ -94,3 +122,4 @@ class QRadarAdapter(BaseAdapter):
         if mag <= 8:
             return 4
         return 5
+
