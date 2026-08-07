@@ -1,13 +1,17 @@
 # Virtual Environment
+.venv/
 venv/
 env/
 
-# Python Cache & Bytecode
+# Python Cache
 __pycache__/
 *.pyc
-*.pyo
 
-# IDE & OS Files
-.vscode/
-.idea/
-.DS_Store
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+
+# Databases / Logs
+*.db
+*.sqlite3
+*.log
