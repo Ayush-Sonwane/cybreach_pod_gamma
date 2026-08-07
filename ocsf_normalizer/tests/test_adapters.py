@@ -1,52 +1,84 @@
+# tests/test_adapters.py
 import json
-from src.adapters.asim_adapter import AsimAdapter
-from src.adapters.ecs_adapter import EcsAdapter
-from src.adapters.splunk_adapter import SplunkOCSFAdapter
+from src.normalizer.base import BaseNormalizer as OCSFNormalizer
+
+def run_tests():
+    normalizer = OCSFNormalizer()
+
+    # 1. IBM QRadar (AQL Schema) Payload
+    qradar_payload = {
+        "starttime": 1711920000000,
+        "sourceip": "10.0.0.15",
+        "destinationip": "192.168.1.1",
+        "sourceport": 61234,
+        "username": "qradar_admin",
+        "action": "login",
+        "status": "failure",
+        "magnitude": 8
+    }
+
+    # 2. CrowdStrike LogScale (LQL Schema) Payload
+    logscale_payload = {
+        "@timestamp": "2026-08-07T08:00:00.000Z",
+        "aip": "172.16.10.5",
+        "endpoint_ip": "10.0.0.1",
+        "user": "logscale_user",
+        "event_type": "user_login",
+        "status": "success",
+        "loglevel": "info"
+    }
+
+    # 3. Splunk (CIM Schema) Payload
+    splunk_payload = {
+        "_time": 1711920000,
+        "src_ip": "192.168.1.50",
+        "dest_ip": "10.0.0.1",
+        "user": "splunk_user",
+        "action": "login",
+        "status": "success",
+        "vendor_severity": "informational"
+    }
+
+    # 4. Microsoft Sentinel (ASIM Schema) Payload
+    sentinel_payload = {
+        "TimeGenerated": "2026-08-07T08:00:00.000Z",
+        "SrcIpAddr": "10.1.1.20",
+        "TargetIpAddr": "10.0.0.1",
+        "TargetUsername": "sentinel_admin",
+        "EventResult": "Success",
+        "SeverityLevel": "Low"
+    }
+
+    # 5. Elastic (ECS Schema) Payload
+    ecs_payload = {
+        "@timestamp": "2026-08-07T08:00:00.000Z",
+        "source.ip": "192.168.10.12",
+        "destination.ip": "10.0.0.1",
+        "user.name": "ecs_user",
+        "event.outcome": "success",
+        "event.severity": 2
+    }
+
+    test_cases = [
+        ("IBM QRadar", qradar_payload),
+        ("CrowdStrike LogScale", logscale_payload),
+        ("Splunk CIM", splunk_payload),
+        ("MS Sentinel ASIM", sentinel_payload),
+        ("Elastic ECS", ecs_payload)
+    ]
+
+    print("==================================================")
+    print("      RUNNING POD GAMMA ALL-ADAPTER TESTS         ")
+    print("==================================================\n")
+
+    for vendor_name, payload in test_cases:
+        print(f"=== Testing {vendor_name} Normalization ===")
+        try:
+            ocsf_event = normalizer.process_log(payload)  # Use process_log or process_raw_log depending on method name in base.py
+            print(json.dumps(ocsf_event.model_dump(), indent=2))
+            print("✅ Status: SUCCESS\n")
+        except Exception as e:
+            print(f"❌ Status: FAILED - {str(e)}\n")
 
 if __name__ == "__main__":
-    asim = AsimAdapter()
-    ecs = EcsAdapter()
-    splunk = SplunkOCSFAdapter()
-
-    # 1. Sample ASIM Network Event
-    asim_raw = {
-        "TimeGenerated": "2026-08-06T10:30:00Z",
-        "SrcIpAddr": "192.168.1.100",
-        "SrcPortNumber": 54321,
-        "DstIpAddr": "10.0.0.1",
-        "DstPortNumber": 443,
-        "NetworkProtocol": "tcp",
-        "EventResult": "Success",
-        "EventVendor": "PaloAlto",
-        "EventProduct": "PAN-OS"
-    }
-
-    # 2. Sample ECS Network Event
-    ecs_raw = {
-        "@timestamp": "2026-08-06T10:30:00Z",
-        "source": {"ip": "192.168.1.100", "port": 54321},
-        "destination": {"ip": "10.0.0.1", "port": 443},
-        "network": {"transport": "tcp"},
-        "event": {"outcome": "success"},
-        "observer": {"vendor": "Elastic", "product": "Fleet"}
-    }
-
-    # 3. Sample Splunk CIM Authentication Event
-    splunk_raw = {
-        "_time": 1785983400,
-        "action": "success",
-        "user": "admin_user",
-        "src_ip": "192.168.1.100",
-        "sourcetype": "winlogevent"
-    }
-
-    print("--- ASIM -> OCSF Output ---")
-    print(json.dumps(asim.transform_network_session(asim_raw), indent=2))
-
-    print("\n--- ECS -> OCSF Output ---")
-    print(json.dumps(ecs.transform_network_session(ecs_raw), indent=2))
-
-    print("\n--- SPLUNK -> OCSF Output ---")
-    # Using map_to_ocsf and converting Pydantic model to dict for JSON serialization
-    splunk_ocsf_model = splunk.map_to_ocsf(splunk_raw)
-    print(json.dumps(splunk_ocsf_model.model_dump(), indent=2))
+    run_tests()

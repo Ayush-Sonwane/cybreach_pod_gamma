@@ -1,27 +1,15 @@
 import time
 from typing import Dict, Any
 
-# ✅ FIX: Updated import path to locate models inside src package
 try:
-    from src.models import (
-        OCSFAuthenticationModel,
-        UserModel,
-        DeviceModel,
-        ActorModel
-    )
-except ModuleNotFoundError:
-    # Fallback if models.py is located directly inside src/adapters/
-    from .models import (
-        OCSFAuthenticationModel,
-        UserModel,
-        DeviceModel,
-        ActorModel
-    )
+    from src.models.ocsf_models import OCSFAuthenticationEvent
+except (ModuleNotFoundError, ImportError):
+    from src.models import OCSFAuthenticationEvent
 
 
-class SplunkOCSFAdapter:
+class SplunkAdapter:
     """
-    Adapter to detect Splunk CIM payloads and convert them into your exact OCSF Authentication Model.
+    Adapter to detect Splunk CIM payloads and convert them into standard OCSF Authentication Events.
     """
 
     @staticmethod
@@ -38,9 +26,9 @@ class SplunkOCSFAdapter:
         return has_splunk_keys or has_cim_keys
 
     @classmethod
-    def map_to_ocsf(cls, payload: Dict[str, Any]) -> OCSFAuthenticationModel:
+    def map_to_ocsf(cls, payload: Dict[str, Any]) -> OCSFAuthenticationEvent:
         """
-        Maps Splunk CIM fields directly into your OCSFAuthenticationModel schema.
+        Maps Splunk CIM fields directly into the standard OCSFAuthenticationEvent schema.
         """
         # 1. Map Action -> Status ID (1 = Success, 2 = Failure, 99 = Unknown in standard OCSF)
         raw_action = str(payload.get("action", "")).lower()
@@ -53,24 +41,24 @@ class SplunkOCSFAdapter:
 
         # 2. Extract User details
         username = payload.get("user") or payload.get("src_user") or "Unknown"
-        user_obj = UserModel(name=username)
 
         # 3. Extract Device/Endpoint details
         src_ip = payload.get("src_ip") or payload.get("src") or "0.0.0.0"
-        device_obj = DeviceModel(ip=src_ip)
 
-        # 4. Extract Actor (In auth logs, actor is usually the same user or system process)
-        actor_user = payload.get("src_user") or username
-        actor_obj = ActorModel(user=UserModel(name=actor_user))
-
-        # 5. Construct Normalized OCSF Object strictly matching your models.py
-        return OCSFAuthenticationModel(
+        # 4. Construct Normalized OCSF Object
+        return OCSFAuthenticationEvent(
             activity_id=1,        # 1 = Logon in OCSF Authentication
             category_uid=3,       # 3 = Identity & Access Management
             class_uid=3002,       # 3002 = Authentication
             severity_id=1,        # 1 = Informational / Low
             status_id=status_id,
-            user=user_obj,
-            device=device_obj,
-            actor=actor_obj
+            time=int(time.time() * 1000),
+            user={"name": username},
+            src_endpoint={"ip": src_ip}
         )
+
+    def normalize(self, payload: Dict[str, Any]) -> OCSFAuthenticationEvent:
+        """
+        Standard normalizer interface wrapper.
+        """
+        return self.map_to_ocsf(payload)
