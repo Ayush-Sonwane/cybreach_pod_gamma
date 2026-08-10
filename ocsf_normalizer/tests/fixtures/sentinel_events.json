@@ -1,0 +1,222 @@
+[
+  {
+    "EventType": "Logon",
+    "TargetUsername": "deepali.panchal",
+    "SrcIpAddr": "10.0.0.15",
+    "TargetIpAddr": "dc01.corp.local",
+    "EventResult": "Success",
+    "SeverityLevel": "Low",
+    "LogonType": 10,
+    "Application": "Microsoft Entra ID",
+    "EventStartTime": "2026-08-01T08:00:00.000Z"
+  },
+  {
+    "TimeGenerated": "2026-08-02T08:01:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "admin",
+    "SrcIpAddr": "192.168.1.50",
+    "TargetIpAddr": "web01.corp.local",
+    "EventResult": "Failure",
+    "SeverityLevel": "Medium"
+  },
+  {
+    "TimeGenerated": "2026-08-03T08:02:00.000Z",
+    "EventType": "Logoff",
+    "TargetUsername": "svc_webapp",
+    "SrcIpAddr": "172.16.10.5",
+    "TargetIpAddr": "db01.corp.local",
+    "EventResult": "Success",
+    "SeverityLevel": "High",
+    "LogonType": 10,
+    "Application": "Microsoft Entra ID"
+  },
+  {
+    "TimeGenerated": "2026-08-04T08:03:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "john.doe",
+    "SrcIpAddr": "10.1.1.20",
+    "TargetIpAddr": "10.0.0.1",
+    "EventResult": "Success",
+    "SeverityLevel": "Low"
+  },
+  {
+    "TimeGenerated": "2026-08-05T08:04:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "mary.smith",
+    "SrcIpAddr": "192.168.10.12",
+    "TargetIpAddr": "10.0.0.2",
+    "EventResult": "Failure",
+    "SeverityLevel": "Medium",
+    "LogonType": 10,
+    "Application": "Microsoft Entra ID"
+  },
+  {
+    "EventType": "Logon",
+    "TargetUsername": "it-admin",
+    "SrcIpAddr": "10.0.1.7",
+    "TargetIpAddr": "dc01.corp.local",
+    "EventResult": "Success",
+    "SeverityLevel": "High",
+    "EventStartTime": "2026-08-06T08:05:00.000Z"
+  },
+  {
+    "TimeGenerated": "2026-08-07T08:06:00.000Z",
+    "EventType": "Logoff",
+    "TargetUsername": "krishna.k",
+    "SrcIpAddr": "203.0.113.42",
+    "TargetIpAddr": "web01.corp.local",
+    "EventResult": "Success",
+    "SeverityLevel": "Low",
+    "LogonType": 10,
+    "Application": "Microsoft Entra ID"
+  },
+  {
+    "TimeGenerated": "2026-08-08T08:07:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "pradeep.p",
+    "SrcIpAddr": "198.51.100.8",
+    "TargetIpAddr": "db01.corp.local",
+    "EventResult": "Failure",
+    "SeverityLevel": "Medium"
+  },
+  {
+    "TimeGenerated": "2026-08-09T08:08:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "arsha.k",
+    "SrcIpAddr": "172.20.0.3",
+    "TargetIpAddr": "10.0.0.1",
+    "EventResult": "Success",
+    "SeverityLevel": "High",
+    "LogonType": 10,
+    "Application": "Microsoft Entra ID"
+  },
+  {
+    "TimeGenerated": "2026-08-10T08:09:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "ayush.r",
+    "SrcIpAddr": "10.10.0.99",
+    "TargetIpAddr": "10.0.0.2",
+    "EventResult": "Success",
+    "SeverityLevel": "Low"
+  },
+  {
+    "EventType": "Logoff",
+    "TargetUsername": "soc_analyst",
+    "SrcIpAddr": "192.168.88.14",
+    "TargetIpAddr": "dc01.corp.local",
+    "EventResult": "Failure",
+    "SeverityLevel": "Medium",
+    "LogonType": 10,
+    "Application": "Microsoft Entra ID",
+    "EventStartTime": "2026-08-11T08:10:00.000Z"
+  },
+  {
+    "TimeGenerated": "2026-08-12T08:11:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "guest",
+    "SrcIpAddr": "172.31.2.1",
+    "TargetIpAddr": "web01.corp.local",
+    "EventResult": "Success",
+    "SeverityLevel": "High"
+  },
+  {
+    "TimeGenerated": "2026-08-13T08:12:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "deployment_bot",
+    "SrcIpAddr": "10.0.0.15",
+    "TargetIpAddr": "db01.corp.local",
+    "EventResult": "Success",
+    "SeverityLevel": "Low",
+    "LogonType": 10,
+    "Application": "Microsoft Entra ID"
+  },
+  {
+    "TimeGenerated": "2026-08-14T08:13:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "db_sa",
+    "SrcIpAddr": "192.168.1.50",
+    "TargetIpAddr": "10.0.0.1",
+    "EventResult": "Failure",
+    "SeverityLevel": "Medium"
+  },
+  {
+    "TimeGenerated": "2026-08-15T08:14:00.000Z",
+    "EventType": "Logoff",
+    "TargetUsername": "app_service",
+    "SrcIpAddr": "172.16.10.5",
+    "TargetIpAddr": "10.0.0.2",
+    "EventResult": "Success",
+    "SeverityLevel": "High",
+    "LogonType": 10,
+    "Application": "Microsoft Entra ID"
+  },
+  {
+    "EventType": "Logon",
+    "TargetUsername": "ticket-user",
+    "SrcIpAddr": "10.1.1.20",
+    "TargetIpAddr": "dc01.corp.local",
+    "EventResult": "Success",
+    "SeverityLevel": "Low",
+    "EventStartTime": "2026-08-16T08:15:00.000Z"
+  },
+  {
+    "TimeGenerated": "2026-08-17T08:16:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "deepali.panchal",
+    "SrcIpAddr": "192.168.10.12",
+    "TargetIpAddr": "web01.corp.local",
+    "EventResult": "Failure",
+    "SeverityLevel": "Medium",
+    "LogonType": 10,
+    "Application": "Microsoft Entra ID"
+  },
+  {
+    "TimeGenerated": "2026-08-18T08:17:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "admin",
+    "SrcIpAddr": "10.0.1.7",
+    "TargetIpAddr": "db01.corp.local",
+    "EventResult": "Success",
+    "SeverityLevel": "High"
+  },
+  {
+    "TimeGenerated": "2026-08-19T08:18:00.000Z",
+    "EventType": "Logoff",
+    "TargetUsername": "svc_webapp",
+    "SrcIpAddr": "203.0.113.42",
+    "TargetIpAddr": "10.0.0.1",
+    "EventResult": "Success",
+    "SeverityLevel": "Low",
+    "LogonType": 10,
+    "Application": "Microsoft Entra ID"
+  },
+  {
+    "TimeGenerated": "2026-08-20T08:19:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "john.doe",
+    "SrcIpAddr": "198.51.100.8",
+    "TargetIpAddr": "10.0.0.2",
+    "EventResult": "Failure",
+    "SeverityLevel": "Medium"
+  },
+  {
+    "EventType": "Logon",
+    "TargetUsername": "mary.smith",
+    "SrcIpAddr": "172.20.0.3",
+    "TargetIpAddr": "dc01.corp.local",
+    "EventResult": "Success",
+    "SeverityLevel": "High",
+    "LogonType": 10,
+    "Application": "Microsoft Entra ID",
+    "EventStartTime": "2026-08-21T08:20:00.000Z"
+  },
+  {
+    "TimeGenerated": "2026-08-22T08:21:00.000Z",
+    "EventType": "Logon",
+    "TargetUsername": "it-admin",
+    "SrcIpAddr": "10.10.0.99",
+    "TargetIpAddr": "web01.corp.local",
+    "EventResult": "Unknown",
+    "SeverityLevel": "Low"
+  }
+]
