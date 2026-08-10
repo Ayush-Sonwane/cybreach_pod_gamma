@@ -1,159 +1,58 @@
-import logging
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional
-
-try:
-    from src.models.ocsf_models import OCSFAuthenticationEvent, FieldProvenance
-    from src.normalizer.complex_objects import (
-        build_actor,
-        build_device,
-        build_endpoint,
-        build_file,
-        build_process,
-        build_user,
-    )
-except (ModuleNotFoundError, ImportError):
-    from src.models import OCSFAuthenticationEvent, FieldProvenance
-    from src.normalizer import complex_objects
-
-    build_actor = complex_objects.build_actor
-    build_device = complex_objects.build_device
-    build_endpoint = complex_objects.build_endpoint
-    build_file = complex_objects.build_file
-    build_process = complex_objects.build_process
-    build_user = complex_objects.build_user
-
-logger = logging.getLogger("ocsf_normalizer")
-
+# src/adapters/asim_adapter.py
+from datetime import datetime
+from typing import Dict, Any
 
 class ASIMAdapter:
-    """
-    Adapter to normalize Microsoft Sentinel logs (ASIM schema) 
-    into the standard OCSF format (v1.1.0+).
-    """
+    """Adapter to map MS Sentinel ASIM events to OCSF Schema (Class UID: 3002)."""
 
     @staticmethod
-    def _to_epoch_ms(timestamp_str: Optional[str]) -> int:
-        """Converts ISO 8601 string to Unix Epoch Milliseconds."""
-        if not timestamp_str:
-            return int(datetime.now(timezone.utc).timestamp() * 1000)
-        try:
-            ts = str(timestamp_str).replace("Z", "+00:00")
-            dt = datetime.fromisoformat(ts)
-            return int(dt.timestamp() * 1000)
-        except Exception as e:
-            logger.warning(f"Failed to parse ASIM timestamp '{timestamp_str}': {e}")
-            return int(datetime.now(timezone.utc).timestamp() * 1000)
+    def normalize(raw_event: Dict[str, Any]) -> Dict[str, Any]:
+        provenance = []
 
-    def normalize(self, raw_event: Dict[str, Any]) -> OCSFAuthenticationEvent:
-        """
-        Transforms ASIM Authentication -> OCSF Authentication Event
-        """
-        provenance: Dict[str, FieldProvenance] = {}
+        # 1. Event Time
+        time_gen = raw_event.get("TimeGenerated")
+        event_time = time_gen if time_gen else datetime.utcnow().isoformat() + "Z"
+        if "TimeGenerated" in raw_event:
+            provenance.append({"ocsf_field": "time", "raw_field": "TimeGenerated"})
 
-        event_result = raw_event.get("EventResult", "Unknown")
-        status_id = 1 if event_result == "Success" else (2 if event_result == "Failure" else 99)
+        # 2. Map Severity (Fixes Issue #7)
+        raw_sev = str(raw_event.get("SeverityLevel", "")).lower()
+        sev_map = {"informational": 1, "low": 1, "medium": 2, "high": 3, "critical": 4}
+        severity_id = sev_map.get(raw_sev, 1)
+        if "SeverityLevel" in raw_event:
+            provenance.append({"ocsf_field": "severity_id", "raw_field": "SeverityLevel"})
 
-        time_val = self._to_epoch_ms(raw_event.get("EventStartTime") or raw_event.get("TimeGenerated"))
+        # 3. Source & Destination Endpoints (Fixes Issue #8)
+        src_endpoint = {}
+        if "SrcIpAddr" in raw_event:
+            src_endpoint["ip"] = raw_event["SrcIpAddr"]
+            provenance.append({"ocsf_field": "src_endpoint.ip", "raw_field": "SrcIpAddr"})
 
-        # Complex User object (ASIM Target* conventions)
-        user = build_user(
-            raw_event,
-            {
-                "name": ["TargetUsername", "Username"],
-                "uid": ["TargetUserId", "TargetUserSid"],
-                "domain": ["TargetDomainName", "DomainName"],
-            },
-            provenance,
-        )
+        dst_endpoint = {}
+        if "DstIpAddr" in raw_event:
+            dst_endpoint["ip"] = raw_event["DstIpAddr"]
+            provenance.append({"ocsf_field": "dst_endpoint.ip", "raw_field": "DstIpAddr"})
 
-        # Complex Endpoint objects (ASIM Src* / Dst* conventions)
-        src_endpoint = build_endpoint(
-            raw_event,
-            {
-                "ip": ["SrcIpAddr", "SrcIP"],
-                "port": "SrcPortNumber",
-                "hostname": "SrcHostname",
-                "mac": "SrcMacAddr",
-                "name": "SrcDeviceName",
-            },
-            provenance,
-        )
-        dst_endpoint = build_endpoint(
-            raw_event,
-            {
-                "ip": ["DstIpAddr", "TargetIpAddr", "DstIP"],
-                "port": "DstPortNumber",
-                "hostname": "DstHostname",
-                "mac": "DstMacAddr",
-                "name": "DstDeviceName",
-            },
-            provenance,
-        )
+        # Build Normalized Record
+        normalized = {
+            "class_uid": 3002,
+            "category_uid": 3,
+            "activity_id": 1,
+            "time": event_time,
+            "severity_id": severity_id,
+            "metadata": {
+                "version": "1.1.0",
+                "product": {"name": "Microsoft Sentinel", "vendor_name": "Microsoft"},
+                "provenance": provenance  # Fixes Issue #9
+            }
+        }
 
-        # Device object from ASIM Device* fields
-        device = build_device(
-            raw_event,
-            {
-                "name": ["EventProduct", "DeviceProduct"],
-                "uid": "EventProductId",
-                "hostname": "Hostname",
-                "ip": "DstIpAddr",
-            },
-            provenance,
-        )
+        if src_endpoint:
+            normalized["src_endpoint"] = src_endpoint
+        if dst_endpoint:
+            normalized["dst_endpoint"] = dst_endpoint
+        if "TargetUsername" in raw_event:
+            normalized["actor"] = {"user": {"name": raw_event["TargetUsername"]}}
+            provenance.append({"ocsf_field": "actor.user.name", "raw_field": "TargetUsername"})
 
-        # Actor (subject / initiator)
-        actor = build_actor(
-            raw_event,
-            {
-                "user": {"name": ["ActorUsername", "Username"], "uid": "ActorUserId"},
-                "type_id": "ActorTypeId",
-            },
-            provenance,
-        )
-
-        # Process object from ASIM ActingProcess* fields
-        process = build_process(
-            raw_event,
-            {
-                "pid": "ActingProcessId",
-                "name": ["ActingProcessName", "ProcessName"],
-                "path": "ActingProcessPath",
-                "cmd_line": "ActingProcessCommandLine",
-            },
-            provenance,
-        )
-
-        # File object from ASIM TargetFile* / File* fields
-        file = build_file(
-            raw_event,
-            {
-                "name": ["TargetFileName", "FileName"],
-                "path": "FilePath",
-                "size": "FileSize",
-                "hashes": {
-                    "sha256": ["FileHash", "TargetFileSHA256"],
-                    "md5": "TargetFileMD5",
-                },
-            },
-            provenance,
-        )
-
-        return OCSFAuthenticationEvent(
-            class_uid=3002,
-            category_uid=3,
-            activity_id=1,
-            severity_id=1,
-            status_id=status_id,
-            time=time_val,
-            user=user,
-            src_endpoint=src_endpoint,
-            dst_endpoint=dst_endpoint,
-            device=device,
-            actor=actor,
-            process=process,
-            file=file,
-            provenance=provenance,
-        )
-
+        return normalized
