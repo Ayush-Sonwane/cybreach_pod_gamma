@@ -8,7 +8,6 @@ import os
 import pytest
 
 from src.detector import SchemaDetector
-from src.models.ocsf_models import OCSFAuthenticationEvent
 from src.normalizer.base import BaseNormalizer
 from src.validator import OCSFValidator
 
@@ -44,8 +43,9 @@ def test_pipeline_normalizes_all_fixture_events(vendor, normalizer, validator):
         detected = SchemaDetector.detect_vendor(raw)
         assert detected == vendor, f"{vendor} event detected as {detected}"
         event = normalizer.process_log(raw)
-        assert isinstance(event, OCSFAuthenticationEvent)
-        is_valid, errors = validator.validate_event(event.model_dump())
+        assert isinstance(event, dict)
+        assert event.get("class_uid") == 3002
+        is_valid, errors = validator.validate_event(event)
         assert is_valid, f"{vendor} event failed validation: {errors}"
 
 

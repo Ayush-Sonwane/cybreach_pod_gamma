@@ -29,10 +29,11 @@ def normalize(request: NormalizeRequest):
     try:
         event = normalizer.process_log(request.log)
 
+        if isinstance(event, dict):
+            return event
+
         if hasattr(event, "model_dump"):
             return event.model_dump()
-
-        return event.dict()
 
     except Exception as e:
         raise HTTPException(
