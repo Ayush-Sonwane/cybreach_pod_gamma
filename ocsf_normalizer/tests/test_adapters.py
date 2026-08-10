@@ -8,11 +8,13 @@ For every sample event the suite verifies:
   1. Stage 1 - schema detection routes the event to the correct vendor adapter
   2. Stage 2 - field mapping (user, src/dst endpoint, status, severity, time)
   3. Stage 3 - output is a valid OCSF Authentication Event (OCSFValidator)
-  4. Provenance tracking for adapters that implement it (QRadar, LogScale)
+  4. Provenance tracking for every adapter (raw keys at adapter level,
+     mapped.<ocsf_field> keys from complex objects)
   5. Edge cases: empty payloads and unsupported vendors fail cleanly
 """
 import json
 import os
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
 
 import pytest
@@ -93,14 +95,28 @@ def expected_status_id(vendor, raw):
     return 99
 
 
+def to_dict(obj):
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if hasattr(obj, "dict"):
+        return obj.dict()
+    if is_dataclass(obj):
+        return asdict(obj)
+    raise TypeError(f"Cannot convert {type(obj).__name__} to dict")
+
+
 def expected_user(vendor, raw):
     if vendor == "splunk":
-        return raw.get("user") or raw.get("src_user") or "Unknown"
+        return raw.get("user") or raw.get("src_user")
     if vendor == "sentinel":
-        return raw.get("TargetUsername") or "Unknown"
+        return raw.get("TargetUsername")
     if vendor == "ecs":
         user = raw.get("user", {}) if isinstance(raw.get("user"), dict) else {}
-        return user.get("name") or raw.get("user.name") or "Unknown"
+        return user.get("name") or raw.get("user.name")
     if vendor == "qradar":
         return raw.get("username") or raw.get("identityusername")
     if vendor == "logscale":
@@ -110,7 +126,7 @@ def expected_user(vendor, raw):
 
 def expected_src_ip(vendor, raw):
     if vendor == "splunk":
-        return raw.get("src_ip") or raw.get("src") or "0.0.0.0"
+        return raw.get("src_ip") or raw.get("src")
     if vendor == "sentinel":
         return raw.get("SrcIpAddr")
     if vendor == "ecs":
@@ -124,6 +140,13 @@ def expected_src_ip(vendor, raw):
 
 
 def expected_dst_ip(vendor, raw):
+    if vendor == "splunk":
+        return raw.get("dest_ip") or raw.get("dest")
+    if vendor == "sentinel":
+        return raw.get("DstIpAddr") or raw.get("TargetIpAddr")
+    if vendor == "ecs":
+        destination = raw.get("destination", {}) if isinstance(raw.get("destination"), dict) else {}
+        return destination.get("ip") or raw.get("destination.ip")
     if vendor == "qradar":
         return raw.get("destinationip")
     if vendor == "logscale":
@@ -307,30 +330,45 @@ def test_severity_id_mapping(vendor, idx, raw):
 def test_user_mapping(vendor, idx, raw):
     ocsf = ADAPTERS[vendor].normalize(raw)
     expected = expected_user(vendor, raw)
-    if expected is None:
-        assert ocsf.user == {}
+    user = to_dict(ocsf.user)
+    if user is None:
+        assert expected is None, (
+            f"{vendor}[{idx}] user missing, expected '{expected}'"
+        )
     else:
-        assert ocsf.user.get("name") == expected
+        assert user.get("name") == expected, (
+            f"{vendor}[{idx}] user.name={user.get('name')}, expected {expected}"
+        )
 
 
 @pytest.mark.parametrize("vendor,idx,raw", ALL_EVENTS)
 def test_src_endpoint_mapping(vendor, idx, raw):
     ocsf = ADAPTERS[vendor].normalize(raw)
     expected = expected_src_ip(vendor, raw)
-    if expected is None:
-        assert ocsf.src_endpoint == {}
+    src = to_dict(ocsf.src_endpoint)
+    if src is None:
+        assert expected is None, (
+            f"{vendor}[{idx}] src_endpoint missing, expected ip '{expected}'"
+        )
     else:
-        assert ocsf.src_endpoint.get("ip") == expected
+        assert src.get("ip") == expected, (
+            f"{vendor}[{idx}] src_endpoint.ip={src.get('ip')}, expected {expected}"
+        )
 
 
 @pytest.mark.parametrize("vendor,idx,raw", ALL_EVENTS)
 def test_dst_endpoint_mapping(vendor, idx, raw):
     ocsf = ADAPTERS[vendor].normalize(raw)
     expected = expected_dst_ip(vendor, raw)
-    if expected is None:
-        assert ocsf.dst_endpoint == {}
+    dst = to_dict(ocsf.dst_endpoint)
+    if dst is None:
+        assert expected is None, (
+            f"{vendor}[{idx}] dst_endpoint missing, expected ip '{expected}'"
+        )
     else:
-        assert ocsf.dst_endpoint.get("ip") == expected
+        assert dst.get("ip") == expected, (
+            f"{vendor}[{idx}] dst_endpoint.ip={dst.get('ip')}, expected {expected}"
+        )
 
 
 @pytest.mark.parametrize("vendor,idx,raw", ALL_EVENTS)
@@ -358,11 +396,18 @@ def test_provenance_recorded_for_consumed_fields(vendor, idx, raw):
         elif fallback and fallback in raw and raw[fallback] is not None:
             source_key = fallback
         if source_key is not None:
-            assert source_key in provenance, (
+            entry = provenance.get(source_key)
+            if entry is None:
+                entry = next(
+                    (e for e in provenance.values()
+                     if getattr(e, "original_field", None) == source_key),
+                    None,
+                )
+            assert entry is not None, (
                 f"{vendor}[{idx}] missing provenance for '{source_key}'"
             )
-            assert provenance[source_key].original_field == source_key
-            assert provenance[source_key].original_value == raw[source_key]
+            assert entry.original_field == source_key
+            assert entry.original_value == raw[source_key]
 
 
 @pytest.mark.parametrize("vendor,idx,raw",
@@ -370,6 +415,10 @@ def test_provenance_recorded_for_consumed_fields(vendor, idx, raw):
                           if v in QRADAR_LOGCALE_VENDORS])
 def test_provenance_never_records_missing_fields(vendor, idx, raw):
     ocsf = ADAPTERS[vendor].normalize(raw)
+    provenance = ocsf.provenance
+    recorded = set(provenance.keys()) | {
+        e.original_field for e in provenance.values()
+    }
     for primary, fallback in CONSUMED_FIELD_PAIRS[vendor]:
         source_key = None
         if primary in raw and raw[primary] is not None:
@@ -377,9 +426,10 @@ def test_provenance_never_records_missing_fields(vendor, idx, raw):
         elif fallback and fallback in raw and raw[fallback] is not None:
             source_key = fallback
         if source_key is None:
-            assert primary not in ocsf.provenance
-            if fallback:
-                assert fallback not in ocsf.provenance
+            missing = [primary] + ([fallback] if fallback else [])
+            assert not recorded.intersection(missing), (
+                f"{vendor}[{idx}] recorded provenance for absent field(s) {missing}"
+            )
 
 
 @pytest.mark.parametrize("vendor", REQUIRED_PLATFORMS)
