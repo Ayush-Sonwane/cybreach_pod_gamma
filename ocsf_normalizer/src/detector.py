@@ -36,3 +36,18 @@ class SchemaDetector:
 
         return "unknown"
 
+
+class OCSFNormalizerPipeline:
+    """Compatibility wrapper around the package normalizer pipeline."""
+
+    def __init__(self):
+        from src.normalizer.base import BaseNormalizer
+
+        self.normalizer = BaseNormalizer()
+
+    def process_log(self, raw_payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.normalizer.process_log(raw_payload)
+
+    def normalize(self, raw_payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.process_log(raw_payload)
+

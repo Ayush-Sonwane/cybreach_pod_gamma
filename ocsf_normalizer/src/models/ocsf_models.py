@@ -78,3 +78,6 @@ class OCSFAuthenticationEvent(OCSFEvent):
     time: int = Field(..., description="Epoch timestamp in milliseconds")
     status_id: int = Field(default=99, description="1: Success, 2: Failure, 99: Unknown")
 
+
+OCSFAuthenticationModel = OCSFAuthenticationEvent
+

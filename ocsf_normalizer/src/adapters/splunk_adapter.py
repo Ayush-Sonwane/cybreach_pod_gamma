@@ -1,5 +1,6 @@
 # src/adapters/splunk_adapter.py
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Dict, Any
 
 class SplunkAdapter:
@@ -89,3 +90,30 @@ class SplunkAdapter:
                                "raw_field": "user" if "user" in raw_event else "src_user"})
 
         return normalized
+
+
+class SplunkOCSFAdapter(SplunkAdapter):
+    """Backward-compatible Splunk adapter API used by legacy scripts/tests."""
+
+    @staticmethod
+    def is_splunk_payload(raw_event: Dict[str, Any]) -> bool:
+        keys = set(raw_event.keys())
+        return bool({"vendor_severity", "src_ip", "dest_ip", "src", "dest", "_time"} & keys)
+
+    @staticmethod
+    def map_to_ocsf(raw_event: Dict[str, Any]) -> SimpleNamespace:
+        normalized = SplunkAdapter.normalize(raw_event)
+        legacy_event = {
+            **normalized,
+            "user": {"name": raw_event.get("user") or raw_event.get("src_user")},
+            "device": {"ip": raw_event.get("dest_ip") or raw_event.get("dest")},
+        }
+
+        def as_namespace(value):
+            if isinstance(value, dict):
+                return SimpleNamespace(**{k: as_namespace(v) for k, v in value.items()})
+            if isinstance(value, list):
+                return [as_namespace(item) for item in value]
+            return value
+
+        return as_namespace(legacy_event)
