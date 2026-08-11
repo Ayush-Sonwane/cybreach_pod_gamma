@@ -1,9 +1,9 @@
-from src.models.ocsf_models import (
+from .ocsf_models import (
     OCSFEvent,
     OCSFAuthenticationEvent,
     FieldProvenance,
 )
-from src.models.ocsf_objects import (
+from .ocsf_objects import (
     Actor,
     Device,
     Endpoint,

@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.models.ocsf_objects import (
+from .ocsf_objects import (
     Actor,
     Device,
     Endpoint,
