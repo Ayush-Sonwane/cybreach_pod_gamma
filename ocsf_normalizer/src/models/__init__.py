@@ -15,9 +15,12 @@ from src.models.ocsf_objects import (
     User,
 )
 
+OCSFAuthenticationModel = OCSFAuthenticationEvent
+
 __all__ = [
     "OCSFEvent",
     "OCSFAuthenticationEvent",
+    "OCSFAuthenticationModel",
     "FieldProvenance",
     "Actor",
     "Device",
