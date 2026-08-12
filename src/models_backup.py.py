@@ -23,34 +23,3 @@ class OCSFAuthenticationModel(BaseModel):
     user: UserModel
     device: DeviceModel
     actor: ActorModel
-    
-class RevalidateRequest(BaseModel):
-    event_id: str = Field(..., min_length=1)
-    original_event: Dict[str, Any]
-    event: Dict[str, Any]
-
-
-class RevalidateResponse(BaseModel):
-    re_run_id: str
-    event_id: str
-    status: str
-    valid: bool
-    errors: List[str] = Field(default_factory=list)
-    idempotent: bool = False
-
-
-class DeltaChange(BaseModel):
-    field: str
-    before: Optional[Any] = None
-    after: Optional[Any] = None
-
-
-class DeltaResponse(BaseModel):
-    re_run_id: str
-    event_id: str
-    changes: List[DeltaChange] = Field(default_factory=list)
-
-
-class ErrorResponse(BaseModel):
-    code: str
-    message: str
