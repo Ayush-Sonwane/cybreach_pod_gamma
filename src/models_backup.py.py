@@ -23,6 +23,7 @@ class OCSFAuthenticationModel(BaseModel):
     user: UserModel
     device: DeviceModel
     actor: ActorModel
+    
 class RevalidateRequest(BaseModel):
     event_id: str = Field(..., min_length=1)
     original_event: Dict[str, Any]
