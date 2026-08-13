@@ -10,6 +10,7 @@ from src.adapters.asim_adapter import ASIMAdapter
 from src.adapters.ecs_adapter import ECSAdapter
 from src.adapters.qradar_adapter import QRadarAdapter
 from src.adapters.logscale_adapter import LogScaleAdapter
+from src.adapters.webhook_adapter import WebhookAdapter
 
 # Import canonical OCSF model
 from src.models.ocsf_models import OCSFAuthenticationEvent
@@ -33,6 +34,7 @@ class BaseNormalizer:
             "ecs": ECSAdapter(),
             "qradar": QRadarAdapter(),
             "logscale": LogScaleAdapter(),
+            "webhook": WebhookAdapter(),
         }
 
     def process_log(self, raw_payload: Dict[str, Any]) -> OCSFAuthenticationEvent:
