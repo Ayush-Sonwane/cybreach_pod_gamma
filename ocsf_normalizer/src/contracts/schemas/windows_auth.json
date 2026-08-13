@@ -1,0 +1,21 @@
+{
+  "activity_id": 1,
+  "category_uid": 1,
+  "class_uid": 1001,
+  "severity_id": 1,
+  "status_id": 1,
+  "user": {
+    "name": "TargetUserName",
+    "uid": "TargetUserSid",
+    "domain": "TargetDomainName"
+  },
+  "device": {
+    "ip": "IpAddress",
+    "port": "IpPort"
+  },
+  "actor": {
+    "user": {
+      "name": "SubjectUserName"
+    }
+  }
+}

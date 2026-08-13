@@ -1,0 +1,33 @@
+cybreach_pod_gamma/                  <-- Main Project Root Directory
+ │
+ ├── ocsf_normalizer/                <-- Microservice 1: The Normalizer Engine
+ │    ├── .github/workflows/         
+ │    │    └── ci.yml                <-- Cloud robot automation recipe
+ │    ├── src/                       <-- Production Code
+ │    │    ├── core/                 
+ │    │    │    ├── __init__.py      
+ │    │    │    ├── config.py        <-- Application Settings
+ │    │    │    └── contracts.py     <-- Unified OCSF Schema (Pydantic Rulebook)
+ │    │    ├── normalizer/           
+ │    │    │    ├── adapters/        <-- The 5 SIEM Translators (Splunk, Sentinel, etc.)
+ │    │    │    └── config/          <-- Map files (e.g., splunk_map.json)
+ │    │    └── main.py               <-- FastAPI Application Entry Point
+ │    ├── tests/                     <-- Quality Control Lab
+ │    │    └── fixtures/             
+ │    │         └── ocsf_schemas/    <-- Offline OCSF JSON Templates
+ │    ├── venv/                      <-- Private Isolated Sandbox Folder
+ │    └── requirements.txt           <-- Version-Locked Tool List (FastAPI, Pydantic)
+ │
+ └── revalidation_service/           <-- Microservice 2: The Delta Checker Engine
+      ├── .github/workflows/         
+      │    └── ci.yml                
+      ├── src/                       <-- Production Code
+      │    ├── core/                 
+      │    │    ├── config.py        
+      │    │    └── contracts.py     <-- Re-Validation & Delta Report Schemas
+      │    ├── service/              
+      │    │    └── delta_engine.py  <-- Engine that compares before/after gaps
+      │    └── main.py               
+      ├── tests/                     
+      ├── venv/                      
+      └── requirements.txt

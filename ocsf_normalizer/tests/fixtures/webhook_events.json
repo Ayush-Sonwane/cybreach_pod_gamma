@@ -1,0 +1,227 @@
+[
+  {
+    "event_type": "auth_success",
+    "event_time": "2024-01-01T10:00:00Z",
+    "severity": "informational",
+    "status": "success",
+    "src_ip": "10.0.0.15",
+    "dst_ip": "192.168.1.10",
+    "user": "alice.smith",
+    "message": "User authenticated successfully"
+  },
+  {
+    "event_type": "auth_failure",
+    "event_time": "2024-01-01T10:01:00Z",
+    "severity": "high",
+    "status": "failure",
+    "src_ip": "203.0.113.9",
+    "dst_ip": "192.168.1.10",
+    "user": "admin",
+    "message": "Invalid credentials supplied"
+  },
+  {
+    "event_name": "login_attempt",
+    "timestamp": 1704103200,
+    "level": "medium",
+    "result": "blocked",
+    "source_ip": "198.51.100.7",
+    "destination_ip": "192.168.1.20",
+    "username": "bob.jones",
+    "description": "Login blocked by policy"
+  },
+  {
+    "event_type": "account_locked",
+    "occurred_at": "2024-01-02T08:30:00+00:00",
+    "severity": "critical",
+    "outcome": "failure",
+    "src": "10.1.2.3",
+    "user": "carol",
+    "msg": "Account locked after repeated failures"
+  },
+  {
+    "event_id": "evt-0005",
+    "event_time": 1704106800000,
+    "severity_id": 5,
+    "status": "success",
+    "src_ip": "10.0.0.99",
+    "dst_ip": "10.0.0.1",
+    "user_name": "dave",
+    "message": "SSO ticket issued"
+  },
+  {
+    "event_type": "brute_force",
+    "timestamp": "1704110400",
+    "priority": 8,
+    "status": "failure",
+    "src_ip": "45.0.0.3",
+    "dst_ip": "192.168.1.30",
+    "user": "eve",
+    "description": "Multiple failed password attempts"
+  },
+  {
+    "event_type": "session_terminated",
+    "datetime": "2024-01-02T12:00:00.500Z",
+    "severity": "warning",
+    "result": "success",
+    "src_ip": "10.10.0.5",
+    "user": "frank",
+    "message": "Admin terminated user session"
+  },
+  {
+    "event_type": "vpn_connect",
+    "event_time": "2024-01-03T05:15:00Z",
+    "severity": "low",
+    "status": "allowed",
+    "src_ip": "172.16.0.12",
+    "dst_ip": "192.168.0.1",
+    "username": "grace",
+    "message": "VPN tunnel established"
+  },
+  {
+    "event_name": "malware_detected",
+    "timestamp": 1704182400,
+    "severity": "critical",
+    "status": "blocked",
+    "source_ip": "192.168.1.55",
+    "user": "heidi",
+    "description": "Endpoint flagged malicious file"
+  },
+  {
+    "event_type": "config_change",
+    "event_time": "2024-01-03T09:00:00Z",
+    "severity": "informational",
+    "outcome": "success",
+    "src_ip": "10.20.0.1",
+    "user": "ivan",
+    "message": "Firewall policy updated"
+  },
+  {
+    "event_type": "failed_login",
+    "occurred_at": "2024-01-04T22:45:00Z",
+    "level": "error",
+    "status": "error",
+    "src": "8.8.8.8",
+    "dst_ip": "192.168.5.10",
+    "user_name": "judy",
+    "msg": "Authentication failed for domain user"
+  },
+  {
+    "event_id": "evt-0012",
+    "event_time": 1704300000000,
+    "severity_id": 3,
+    "status": "unknown",
+    "src_ip": "10.0.0.7",
+    "user": "mallory",
+    "message": "Unusual outbound traffic observed"
+  },
+  {
+    "event_type": "password_reset",
+    "timestamp": "2024-01-05T14:30:00+05:30",
+    "severity": "medium",
+    "result": "success",
+    "src_ip": "192.168.2.15",
+    "user": "nina",
+    "description": "Password reset via support portal"
+  },
+  {
+    "event_type": "host_quarantined",
+    "datetime": "2024-01-05T18:00:00Z",
+    "priority": 10,
+    "status": "denied",
+    "src_ip": "192.168.1.88",
+    "user": "oscar",
+    "message": "Host isolated from network"
+  },
+  {
+    "event_name": "data_exfil",
+    "event_time": "2024-01-06T03:30:00Z",
+    "severity": "fatal",
+    "outcome": "failure",
+    "source_ip": "192.168.1.12",
+    "destination_ip": "10.9.9.9",
+    "username": "peter",
+    "msg": "Large outbound transfer blocked"
+  },
+  {
+    "event_type": "user_created",
+    "timestamp": 1704398400,
+    "severity": "low",
+    "status": "success",
+    "src_ip": "10.1.1.1",
+    "user_name": "quinn",
+    "message": "New service account provisioned"
+  },
+  {
+    "event_type": "privilege_escalation",
+    "event_time": "2024-01-06T11:00:00Z",
+    "severity": "high",
+    "status": "failure",
+    "src_ip": "10.0.0.42",
+    "user": "ron",
+    "description": "Attempted to grant admin rights denied"
+  },
+  {
+    "event_id": "evt-0018",
+    "occurred_at": 1704466800000,
+    "level": "notice",
+    "result": "success",
+    "src_ip": "172.20.0.3",
+    "user": "steve",
+    "message": "Scheduled task executed"
+  },
+  {
+    "event_type": "firewall_alert",
+    "timestamp": "2024-01-07T00:00:00+00:00",
+    "severity": "moderate",
+    "status": "blocked",
+    "src": "77.66.55.44",
+    "dst_ip": "192.168.1.1",
+    "user": "tom",
+    "msg": "Inbound connection dropped"
+  },
+  {
+    "event_type": "account_disabled",
+    "event_time": "2024-01-07T07:20:00Z",
+    "severity": "medium",
+    "status": "success",
+    "src_ip": "10.20.30.40",
+    "user_name": "uma",
+    "message": "Disabled stale account"
+  },
+  {
+    "event_name": "reverse_shell",
+    "timestamp": 1704513600,
+    "priority": 9,
+    "status": "blocked",
+    "source_ip": "192.168.3.17",
+    "user": "victor",
+    "description": "Suspicious connection attempt neutralized"
+  },
+  {
+    "event_type": "phishing_click",
+    "datetime": "2024-01-08T13:45:00Z",
+    "severity": "critical",
+    "outcome": "failure",
+    "src_ip": "10.5.5.5",
+    "user": "wendy",
+    "message": "User clicked flagged phishing link"
+  },
+  {
+    "event_type": "backup_completed",
+    "event_time": "2024-01-08T23:59:00Z",
+    "severity": "info",
+    "status": "success",
+    "src_ip": "10.99.0.1",
+    "user": "xander",
+    "message": "Nightly backup finished"
+  },
+  {
+    "event_id": "evt-0024",
+    "event_time": "2024-01-09T02:10:00Z",
+    "severity_id": 2,
+    "status": "failure",
+    "src_ip": "198.51.100.200",
+    "user": "yvonne",
+    "msg": "RDP connection failed"
+  }
+]
