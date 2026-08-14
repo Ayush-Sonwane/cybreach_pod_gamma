@@ -1,0 +1,115 @@
+{
+  "source_schema": "ASIM",
+  "target_schema": "OCSF",
+  "target_version": "1.1.0",
+  "mappings": {
+    "NetworkSession": {
+      "target_class_uid": 4001,
+      "target_class_name": "Network Activity",
+      "target_category_uid": 4,
+      "target_category_name": "Network Activity",
+      "field_maps": [
+        {
+          "source_field": "TimeGenerated",
+          "target_field": "time",
+          "data_type": "long",
+          "transformation": "iso_to_epoch_ms"
+        },
+        {
+          "source_field": "SrcIpAddr",
+          "target_field": "src_endpoint.ip",
+          "data_type": "string"
+        },
+        {
+          "source_field": "SrcPortNumber",
+          "target_field": "src_endpoint.port",
+          "data_type": "integer"
+        },
+        {
+          "source_field": "DstIpAddr",
+          "target_field": "dst_endpoint.ip",
+          "data_type": "string"
+        },
+        {
+          "source_field": "DstPortNumber",
+          "target_field": "dst_endpoint.port",
+          "data_type": "integer"
+        },
+        {
+          "source_field": "NetworkProtocol",
+          "target_field": "connection_info.protocol_name",
+          "data_type": "string"
+        },
+        {
+          "source_field": "EventResult",
+          "target_field": "status",
+          "data_type": "string"
+        },
+        {
+          "source_field": "EventVendor",
+          "target_field": "metadata.product.vendor_name",
+          "data_type": "string"
+        },
+        {
+          "source_field": "EventProduct",
+          "target_field": "metadata.product.name",
+          "data_type": "string"
+        }
+      ],
+      "value_mappings": {
+        "status_id": {
+          "source_field": "EventResult",
+          "default_value": 99,
+          "value_map": {
+            "Success": 1,
+            "Failure": 2
+          }
+        }
+      }
+    },
+    "Authentication": {
+      "target_class_uid": 3002,
+      "target_class_name": "Authentication",
+      "target_category_uid": 3,
+      "target_category_name": "Identity & Access Management",
+      "field_maps": [
+        {
+          "source_field": "EventStartTime",
+          "target_field": "time",
+          "data_type": "long",
+          "transformation": "iso_to_epoch_ms"
+        },
+        {
+          "source_field": "TargetUsername",
+          "target_field": "user.name",
+          "data_type": "string"
+        },
+        {
+          "source_field": "TargetUserUpn",
+          "target_field": "user.email_addr",
+          "data_type": "string"
+        },
+        {
+          "source_field": "SrcIpAddr",
+          "target_field": "src_endpoint.ip",
+          "data_type": "string"
+        },
+        {
+          "source_field": "EventResultDetails",
+          "target_field": "status_detail",
+          "data_type": "string"
+        }
+      ],
+      "value_mappings": {
+        "status_id": {
+          "source_field": "EventResult",
+          "default_value": 99,
+          "value_map": {
+            "Success": 1,
+            "Failure": 2
+          }
+        }
+      }
+    }
+  }
+}
