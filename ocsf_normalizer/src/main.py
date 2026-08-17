@@ -10,6 +10,11 @@ from src.dlq import DeadLetterQueue
 from src.webhook.repository import ConnectorRepository
 from src.webhook.security import WebhookSecurity
 from src.webhook.validator import WebhookSchemaValidator
+from src.ocsf_registry.repository import CustomOCSFClassRepository
+from src.models.custom_ocsf_class import (
+    CustomOCSFClassRegistration,
+    CustomOCSFClassResponse,
+)
 
 app = FastAPI(
     title="OCSF Normalization API",
@@ -18,8 +23,8 @@ app = FastAPI(
 
 normalizer = BaseNormalizer()
 connector_repository = ConnectorRepository()
+custom_ocsf_repository = CustomOCSFClassRepository()
 dlq = DeadLetterQueue()
-
 
 class NormalizeRequest(BaseModel):
     log: Dict[str, Any]
@@ -57,7 +62,111 @@ def normalize(request: NormalizeRequest):
             detail=str(e)
         )
 
+# ============================================================
+# Custom OCSF Class Registry
+# ============================================================
 
+@app.post(
+    "/api/v2/ocsf/classes",
+    response_model=CustomOCSFClassResponse,
+    status_code=201,
+)
+def register_custom_ocsf_class(
+    request: CustomOCSFClassRegistration,
+):
+    """
+    Register a custom OCSF class/schema for an organization.
+    """
+
+    import uuid
+
+    class_id = str(uuid.uuid4())
+
+    try:
+        registered_class = custom_ocsf_repository.create_class(
+            class_id=class_id,
+            organization=request.organization,
+            class_name=request.class_name,
+            class_uid=request.class_uid,
+            category_uid=request.category_uid,
+            version=request.version,
+            schema=request.schema,
+        )
+
+    except Exception as e:
+        error_message = str(e)
+
+        if "UNIQUE constraint failed" in error_message:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "CUSTOM_CLASS_EXISTS",
+                    "message": (
+                        f"Class UID '{request.class_uid}' is already "
+                        f"registered for organization "
+                        f"'{request.organization}'"
+                    ),
+                },
+            )
+
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "CUSTOM_CLASS_REGISTRATION_FAILED",
+                "message": error_message,
+            },
+        )
+
+    return {
+        "id": registered_class["id"],
+        "organization": registered_class["organization"],
+        "class_name": registered_class["class_name"],
+        "class_uid": registered_class["class_uid"],
+        "category_uid": registered_class["category_uid"],
+        "version": registered_class["version"],
+        "schema": registered_class["schema"],
+        "status": "registered",
+    }
+
+
+@app.get("/api/v2/ocsf/classes")
+def list_custom_ocsf_classes(
+    organization: str | None = None,
+):
+    """
+    List registered custom OCSF classes.
+
+    If organization is provided, only that organization's
+    custom classes are returned.
+    """
+
+    return {
+        "classes": custom_ocsf_repository.list_classes(
+            organization=organization
+        )
+    }
+
+
+@app.get("/api/v2/ocsf/classes/{class_id}")
+def get_custom_ocsf_class(class_id: str):
+    """
+    Retrieve a registered custom OCSF class by ID.
+    """
+
+    custom_class = custom_ocsf_repository.get_class(class_id)
+
+    if custom_class is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "CUSTOM_CLASS_NOT_FOUND",
+                "message": (
+                    f"Custom OCSF class '{class_id}' was not found"
+                ),
+            },
+        )
+
+    return custom_class
 @app.post("/api/v2/webhook/ingest")
 async def webhook_ingest(
     request: Request,
