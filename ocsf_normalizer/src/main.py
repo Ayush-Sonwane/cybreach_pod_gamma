@@ -1,9 +1,12 @@
-from typing import Dict, Any
+import os
+from contextlib import asynccontextmanager
+from concurrent.futures import ProcessPoolExecutor
+from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException, Header, Request
 from pydantic import BaseModel, Field
 
-from src.normalizer.base import BaseNormalizer
+from src.normalizer.base import BaseNormalizer, _worker_init
 from src.validator import OCSFValidator
 from src.detector import SchemaDetector
 from src.dlq import DeadLetterQueue
@@ -11,9 +14,30 @@ from src.webhook.repository import ConnectorRepository
 from src.webhook.security import WebhookSecurity
 from src.webhook.validator import WebhookSchemaValidator
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Creates one shared ProcessPoolExecutor at startup (avoiding per-request
+    Windows "spawn" overhead) and shuts it down cleanly at exit.
+
+    Pool size is startup-only configuration, from the OCSF_POOL_WORKERS env
+    var (default: CPU count). It's intentionally not exposed as a
+    per-request parameter, a running pool cannot be resized per call.
+    """
+    pool_size = int(os.getenv("OCSF_POOL_WORKERS", os.cpu_count() or 1))
+    pool = ProcessPoolExecutor(max_workers=pool_size, initializer=_worker_init)
+    app.state.process_pool = pool
+    try:
+        yield
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
 app = FastAPI(
     title="OCSF Normalization API",
-    version="2.0.0"
+    version="2.0.0",
+    lifespan=lifespan,
 )
 
 normalizer = BaseNormalizer()
@@ -23,6 +47,15 @@ dlq = DeadLetterQueue()
 
 class NormalizeRequest(BaseModel):
     log: Dict[str, Any]
+
+
+class NormalizeBatchRequest(BaseModel):
+    logs: List[Dict[str, Any]] = Field(
+        ...,
+        max_length=2000,
+        description="Raw vendor events to normalize. Bounded to protect the "
+                    "shared process pool from being monopolized by one caller.",
+    )
 
 
 class WebhookConnectorRequest(BaseModel):
@@ -54,6 +87,28 @@ def normalize(request: NormalizeRequest):
     except Exception as e:
         raise HTTPException(
             status_code=400,
+            detail=str(e)
+        )
+
+
+@app.post("/api/v2/ocsf/normalize/batch")
+def normalize_batch(request: NormalizeBatchRequest):
+    """
+    Batch normalization mode: normalizes many raw vendor events in parallel
+    using the shared startup process pool, preserving input order.
+
+    Per-event normalization failures are expected and returned inside
+    ``results`` -- they are NOT HTTP errors. Only genuine server-side
+    failures surface as 500.
+    """
+    try:
+        return normalizer.process_batch(
+            request.logs,
+            app.state.process_pool,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
             detail=str(e)
         )
 
