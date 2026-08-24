@@ -54,3 +54,30 @@ class DeltaResponse(BaseModel):
 class ErrorResponse(BaseModel):
     code: str
     message: str
+
+
+class SchedulerSettingsModel(BaseModel):
+    enabled: bool
+    interval_seconds: int
+
+
+class SchedulerRunEntry(BaseModel):
+    run_id: Optional[str] = None
+    trigger: str
+    status: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    checked_count: int = 0
+    valid_count: int = 0
+    invalid_count: int = 0
+    duration_ms: Optional[float] = None
+    error: Optional[str] = None
+
+
+class SchedulerStatusResponse(BaseModel):
+    settings: SchedulerSettingsModel
+    scheduler_running: bool
+    runs_started: int = 0
+    skipped_ticks: int = 0
+    last_run: Optional[SchedulerRunEntry] = None
+    recent_runs: List[SchedulerRunEntry] = Field(default_factory=list)
