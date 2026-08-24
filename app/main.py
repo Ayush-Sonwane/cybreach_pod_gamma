@@ -1,5 +1,9 @@
 from fastapi import FastAPI
+from app.database import engine, Base
 from app.routes import custom_ocsf, normalizer
+
+# Create database tables automatically on startup if they don't exist
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Cybreach Custom OCSF Schema Engine",

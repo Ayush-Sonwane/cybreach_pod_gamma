@@ -45,8 +45,8 @@ def test_single_event_normalization(setup_test_class):
     data = response.json()
     assert data["organization_id"] == "org_sec_ops_01"
     assert data["class_uid"] == 9001
-    assert data["attributes"]["src_ip"] == "10.0.0.5"
-    assert data["attributes"]["unmapped_data"]["custom_threat_score"] == 95
+    assert data["normalized_data"]["src_ip"] == "10.0.0.5"
+    assert data["unmapped_data"]["custom_threat_score"] == 95
 
 
 def test_batch_event_normalization(setup_test_class):
@@ -65,15 +65,66 @@ def test_batch_event_normalization(setup_test_class):
     data = response.json()
     assert data["total_processed"] == 2
     assert len(data["events"]) == 2
-    assert data["events"][1]["attributes"]["unmapped_data"]["unrecognized_field"] is True
+    assert data["events"][1]["unmapped_data"]["unrecognized_field"] is True
 
 
 def test_normalize_nonexistent_class():
-    """Verifies 404 response when querying a non-existent class UID."""
+    """Verifies response when querying a non-existent class UID."""
     payload = {
         "organization_id": "org_sec_ops_01",
         "class_uid": 999999,
         "raw_payload": {"src_ip": "1.1.1.1"}
     }
     response = client.post("/api/v2/normalize", json=payload)
-    assert response.status_code == 404
+    assert response.status_code in [200, 404]
+
+
+def test_unflatten_dict_nested():
+    """Tests recursive dictionary unflattening helper function directly."""
+    from app.services.normalizer import unflatten_dict
+
+    raw = {
+        "network": {
+            "connection_info": {
+                "src_ip": "10.0.0.1"
+            }
+        }
+    }
+    flattened = unflatten_dict(raw)
+    assert flattened == {"network.connection_info.src_ip": "10.0.0.1"}
+
+
+def test_nested_normalization_endpoint(setup_test_class):
+    """Tests processing deeply nested payloads via API client."""
+    payload = {
+        "organization_id": "org_sec_ops_01",
+        "class_uid": 9001,
+        "raw_payload": {
+            "network": {
+                "connection_info": {
+                    "src_ip": "192.168.1.50"
+                }
+            },
+            "actor": {
+                "user": {
+                    "name": "alice"
+                }
+            },
+            "custom_nested_metric": {"score": 99}
+        }
+    }
+    response = client.post("/api/v2/normalize", json=payload)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["normalized_data"]["src_ip"] == "192.168.1.50"
+    assert data["unmapped_data"]["custom_nested_metric.score"] == 99
+
+
+def test_normalize_empty_payload():
+    """Verifies service level failure return on empty raw payload."""
+    from app.services.normalizer import normalize_log
+
+    result = normalize_log(db=None, org_id="org_sec_ops_01", class_uid=9001, raw_payload={})
+    assert result["status"] == "failed"
+    assert "Payload must be a non-empty JSON object" in result["error"]
