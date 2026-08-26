@@ -16,12 +16,13 @@ from src.model import (
 )
 from src.repository import RevalidationRepository
 from src.service.delta_engine import DeltaEngine
-from src.core.config import load_scheduler_settings
+from src.core.config import load_scheduler_settings, SchedulerSettings
 from src.service.scheduler import (
     RevalidationRunner,
     RevalidationScheduler,
     SchedulerBusyError,
 )
+from src.scheduling.api import router as schedule_router
 
 
 @asynccontextmanager
@@ -40,6 +41,8 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
+
+app.include_router(schedule_router)
 
 repository = RevalidationRepository()
 
@@ -465,3 +468,46 @@ def scheduler_run_now():
         )
 
     return SchedulerRunEntry(**result)
+
+
+@app.put(
+    "/api/v2/revalidate/scheduler/config",
+    response_model=SchedulerSettingsModel,
+)
+def update_scheduler_config(request: SchedulerSettingsModel):
+    """Update scheduler configuration at runtime (contract: #5 seam).
+
+    Must operate through SchedulerSettings; must not mutate engine
+    internals directly. Interval change takes effect on the next tick;
+    enable/disable transitions call the lifecycle methods.
+    """
+
+    if request.interval_seconds < 1:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_SCHEDULER_CONFIG",
+                "message": (
+                    "interval_seconds must be >= 1"
+                ),
+            },
+        )
+
+    new_settings = SchedulerSettings(
+        enabled=request.enabled,
+        interval_seconds=request.interval_seconds,
+    )
+
+    previously_enabled = scheduler.settings.enabled
+
+    scheduler._settings = new_settings
+
+    if request.enabled and not previously_enabled:
+        scheduler.start()
+    elif not request.enabled and previously_enabled:
+        scheduler.stop()
+
+    return SchedulerSettingsModel(
+        enabled=scheduler.settings.enabled,
+        interval_seconds=scheduler.settings.interval_seconds,
+    )
