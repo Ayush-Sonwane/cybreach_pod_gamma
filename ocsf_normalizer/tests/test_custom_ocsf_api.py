@@ -1,7 +1,25 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import src.main
 from src.main import app
+from src.ocsf_registry.repository import CustomOCSFClassRepository
+
+
+@pytest.fixture(scope="module", autouse=True)
+def isolated_custom_ocsf_db(tmp_path_factory):
+    """Point the custom-OCSF repository at a per-run temp DB.
+
+    The production repository defaults to the shared, gitignored
+    ``connectors.db`` (also used by the webhook connector).  Without
+    isolation this test module seeds persistent rows and re-runs fail
+    with 409 on the first registration.
+    """
+    tmp_db = tmp_path_factory.mktemp("custom_ocsf_db") / "connectors.db"
+    src.main.custom_ocsf_repository = CustomOCSFClassRepository(
+        database_path=str(tmp_db)
+    )
+    yield
 
 
 client = TestClient(app)

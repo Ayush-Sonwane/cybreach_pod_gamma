@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from typing import Dict, Any
 from uuid import uuid4
 
@@ -9,15 +10,39 @@ from src.model import (
     RevalidateResponse,
     DeltaResponse,
     DeltaChange,
+    SchedulerRunEntry,
+    SchedulerSettingsModel,
+    SchedulerStatusResponse,
 )
 from src.repository import RevalidationRepository
 from src.service.delta_engine import DeltaEngine
+from src.core.config import load_scheduler_settings, SchedulerSettings
+from src.service.scheduler import (
+    RevalidationRunner,
+    RevalidationScheduler,
+    SchedulerBusyError,
+)
+from src.scheduling.api import router as schedule_router
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    # Contract clause 7: enabled=false gates automatic scheduling only.
+    if scheduler.settings.enabled:
+        scheduler.start()
+    try:
+        yield
+    finally:
+        scheduler.stop()
 
 
 app = FastAPI(
     title="OCSF Re-Validation Service",
     version="2.0.0",
+    lifespan=lifespan,
 )
+
+app.include_router(schedule_router)
 
 repository = RevalidationRepository()
 
@@ -52,6 +77,24 @@ def validate_ocsf_event(event: Dict[str, Any]):
             )
 
     return len(errors) == 0, errors
+
+
+# -------------------------------------------------
+# Scheduler engine (#4) — see SCHEDULER_CONTRACT.md
+# -------------------------------------------------
+
+scheduler_settings = load_scheduler_settings()
+
+revalidation_runner = RevalidationRunner(
+    repository=repository,
+    validator=validate_ocsf_event,
+)
+
+scheduler = RevalidationScheduler(
+    settings=scheduler_settings,
+    runner=revalidation_runner,
+    repository=repository,
+)
 
 
 @app.get("/")
@@ -335,3 +378,136 @@ def get_delta(re_run_id: str):
                 ),
             },
         )
+
+
+@app.get(
+    "/api/v2/revalidate/scheduler/status",
+    response_model=SchedulerStatusResponse,
+)
+def get_scheduler_status():
+    """
+    Current scheduler configuration, lifecycle state and recent run history.
+    """
+
+    try:
+
+        recent = [
+            SchedulerRunEntry(**entry)
+            for entry in repository.list_scheduler_history(limit=10)
+        ]
+
+        counters = scheduler.counters()
+
+        return SchedulerStatusResponse(
+            settings=SchedulerSettingsModel(
+                enabled=scheduler.settings.enabled,
+                interval_seconds=scheduler.settings.interval_seconds,
+            ),
+            scheduler_running=scheduler.is_running(),
+            runs_started=counters["runs_started"],
+            skipped_ticks=counters["skipped_ticks"],
+            last_run=next(
+                (
+                    entry
+                    for entry in recent
+                    if entry.trigger != "skipped_tick"
+                ),
+                None,
+            ),
+            recent_runs=recent,
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "SCHEDULER_STATUS_FAILED",
+                "message": "Unable to read scheduler status",
+            },
+        )
+
+
+@app.post(
+    "/api/v2/revalidate/scheduler/run-now",
+    response_model=SchedulerRunEntry,
+)
+def scheduler_run_now():
+    """
+    Trigger exactly one re-validation pass through the same single
+    execution path used by scheduled ticks (contract clause 1).
+
+    Returns 409 if a run is already active. A runner failure is NOT a
+    transport error: it is returned as HTTP 200 with status 'failed'
+    plus the recorded error (failures are data — clause 5).
+    """
+
+    try:
+        result = scheduler.run_once(trigger="manual")
+    except SchedulerBusyError as busy_error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "SCHEDULER_RUN_IN_PROGRESS",
+                "message": str(busy_error),
+            },
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "REVALIDATION_SCHEDULER_FAILED",
+                "message": "Unable to trigger re-validation run",
+            },
+        )
+
+    return SchedulerRunEntry(**result)
+
+
+@app.put(
+    "/api/v2/revalidate/scheduler/config",
+    response_model=SchedulerSettingsModel,
+)
+def update_scheduler_config(request: SchedulerSettingsModel):
+    """Update scheduler configuration at runtime (contract: #5 seam).
+
+    Must operate through SchedulerSettings; must not mutate engine
+    internals directly. Interval change takes effect on the next tick;
+    enable/disable transitions call the lifecycle methods.
+    """
+
+    if request.interval_seconds < 1:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_SCHEDULER_CONFIG",
+                "message": (
+                    "interval_seconds must be >= 1"
+                ),
+            },
+        )
+
+    new_settings = SchedulerSettings(
+        enabled=request.enabled,
+        interval_seconds=request.interval_seconds,
+    )
+
+    previously_enabled = scheduler.settings.enabled
+
+    scheduler._settings = new_settings
+
+    if request.enabled and not previously_enabled:
+        scheduler.start()
+    elif not request.enabled and previously_enabled:
+        scheduler.stop()
+
+    return SchedulerSettingsModel(
+        enabled=scheduler.settings.enabled,
+        interval_seconds=scheduler.settings.interval_seconds,
+    )

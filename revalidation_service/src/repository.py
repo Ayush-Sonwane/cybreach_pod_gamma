@@ -13,6 +13,10 @@ class RevalidationRepository:
     def _connect(self):
         connection = sqlite3.connect(self.database_path)
         connection.execute("PRAGMA foreign_keys = ON")
+        # Scheduler contract clause 10: wait briefly instead of failing
+        # immediately when another connection holds the write lock.
+        # Connections stay short-lived and are never shared across threads.
+        connection.execute("PRAGMA busy_timeout = 5000")
         return connection
 
     def _create_tables(self):
@@ -48,6 +52,162 @@ class RevalidationRepository:
                     ADD COLUMN request_hash TEXT
                     """
                 )
+
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scheduler_history (
+                    run_id         TEXT PRIMARY KEY,
+                    trigger        TEXT NOT NULL,
+                    status         TEXT NOT NULL,
+                    started_at     TEXT NOT NULL,
+                    finished_at    TEXT,
+                    checked_count  INTEGER NOT NULL DEFAULT 0,
+                    valid_count    INTEGER NOT NULL DEFAULT 0,
+                    invalid_count  INTEGER NOT NULL DEFAULT 0,
+                    duration_ms    REAL,
+                    error          TEXT
+                )
+                """
+            )
+
+    # ------------------------------------------------------------------ #
+    # Scheduler history (#4) — see SCHEDULER_CONTRACT.md                 #
+    # ------------------------------------------------------------------ #
+
+    def list_runs(self, limit: Optional[int] = None):
+        """Return stored runs (re_run_id + updated_event) for re-execution."""
+        query = """
+            SELECT
+                re_run_id,
+                event_id,
+                updated_event
+            FROM revalidation_runs
+            ORDER BY rowid
+        """
+        parameters = ()
+        if limit is not None:
+            query += " LIMIT ?"
+            parameters = (limit,)
+        query += ";"
+
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
+
+        return [
+            {
+                "re_run_id": row[0],
+                "event_id": row[1],
+                "updated_event": json.loads(row[2]),
+            }
+            for row in rows
+        ]
+
+    def start_scheduler_history(self, run_id: str, trigger: str, started_at: str):
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO scheduler_history (
+                    run_id,
+                    trigger,
+                    status,
+                    started_at
+                )
+                VALUES (?, ?, 'running', ?)
+                """,
+                (run_id, trigger, started_at),
+            )
+
+    def finish_scheduler_history(
+        self,
+        run_id: str,
+        status: str,
+        finished_at: str,
+        checked_count: int,
+        valid_count: int,
+        invalid_count: int,
+        duration_ms: float,
+        error: Optional[str] = None,
+    ):
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE scheduler_history
+                SET
+                    status = ?,
+                    finished_at = ?,
+                    checked_count = ?,
+                    valid_count = ?,
+                    invalid_count = ?,
+                    duration_ms = ?,
+                    error = ?
+                WHERE run_id = ?
+                """,
+                (
+                    status,
+                    finished_at,
+                    checked_count,
+                    valid_count,
+                    invalid_count,
+                    duration_ms,
+                    error,
+                    run_id,
+                ),
+            )
+
+    def record_skipped_scheduler_tick(self, run_id: str, trigger: str, timestamp: str):
+        """Record a scheduled tick that was skipped because a run was active."""
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO scheduler_history (
+                    run_id,
+                    trigger,
+                    status,
+                    started_at,
+                    finished_at
+                )
+                VALUES (?, ?, 'completed', ?, ?)
+                """,
+                (run_id, trigger, timestamp, timestamp),
+            )
+
+    def list_scheduler_history(self, limit: int = 10):
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    run_id,
+                    trigger,
+                    status,
+                    started_at,
+                    finished_at,
+                    checked_count,
+                    valid_count,
+                    invalid_count,
+                    duration_ms,
+                    error
+                FROM scheduler_history
+                ORDER BY started_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+        return [
+            {
+                "run_id": row[0],
+                "trigger": row[1],
+                "status": row[2],
+                "started_at": row[3],
+                "finished_at": row[4],
+                "checked_count": row[5],
+                "valid_count": row[6],
+                "invalid_count": row[7],
+                "duration_ms": row[8],
+                "error": row[9],
+            }
+            for row in rows
+        ]
 
     @staticmethod
     def build_request_hash(
