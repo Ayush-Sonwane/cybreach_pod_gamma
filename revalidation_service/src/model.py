@@ -43,6 +43,7 @@ class DeltaChange(BaseModel):
     field: str
     before: Optional[Any] = None
     after: Optional[Any] = None
+    change_type: str = "data"
 
 
 class DeltaResponse(BaseModel):
