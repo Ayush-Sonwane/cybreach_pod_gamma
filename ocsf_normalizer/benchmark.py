@@ -6,6 +6,10 @@ batch normalization through ``BaseNormalizer.process_batch`` at configurable
 sizes, printing a throughput (events/sec) and latency (ms) report suitable for
 performance demonstrations.
 
+Throughput and latency are reported both for the mixed multi-vendor feed and
+per SIEM platform adapter (splunk, sentinel, ecs, qradar, logscale) so the
+normalizer's per-adapter EPS can be compared directly.
+
 Usage (from the repo root):
 
     python ocsf_normalizer/benchmark.py [--sizes 112 560 1120] [--reps 3]
@@ -34,6 +38,15 @@ def load_events() -> List[Dict]:
         with open(path, encoding="utf-8") as f:
             events.extend(json.load(f))
     return events
+
+
+def load_events_by_vendor() -> Dict[str, List[Dict]]:
+    by_vendor = {}
+    for vendor in VENDORS:
+        path = os.path.join(FIXTURES_DIR, f"{vendor}_events.json")
+        with open(path, encoding="utf-8") as f:
+            by_vendor[vendor] = json.load(f)
+    return by_vendor
 
 
 def run_batch(pool: ProcessPoolExecutor, batch: List[Dict]) -> Dict:
@@ -77,6 +90,7 @@ def main() -> None:
     args = parser.parse_args()
 
     events = load_events()
+    by_vendor = load_events_by_vendor()
     n = len(events)
     sizes = args.sizes or [n, n * 5, n * 10]
     workers = int(os.getenv("OCSF_POOL_WORKERS", os.cpu_count() or 1))
@@ -104,6 +118,33 @@ def main() -> None:
                 f"avg={best['avg_ms_per_event']}ms/event "
                 f"(success={best['succeeded']}/{best['size']}, "
                 f"failed={best['failed']})"
+            )
+
+        report["per_vendor"] = {}
+        per_vendor_size = sizes[0]
+        print(f"\nper-vendor batch throughput at size {per_vendor_size} (best of runs):")
+        for vendor in VENDORS:
+            v_events = by_vendor[vendor]
+            v_batch = (v_events * (per_vendor_size // max(len(v_events), 1) + 1))[:per_vendor_size]
+            v_runs = [run_batch(pool, v_batch) for _ in range(args.reps)]
+            report["per_vendor"][vendor] = v_runs
+            best = min(v_runs, key=lambda r: r["duration_ms"])
+            print(
+                f"  {vendor:9s} n={best['size']:4d} "
+                f"throughput={best['throughput_events_per_sec']:8.1f} ev/sec "
+                f"avg={best['avg_ms_per_event']:.3f} ms/event "
+                f"(success={best['succeeded']}/{best['size']}, "
+                f"failed={best['failed']})"
+            )
+
+        report["per_vendor_latency"] = {}
+        print("\nper-vendor single-event latency (in-process, sequential):")
+        for vendor in VENDORS:
+            s = run_single_baseline(by_vendor[vendor])
+            report["per_vendor_latency"][vendor] = s
+            print(
+                f"  {vendor:9s} n={s['size']:4d} min={s['min_ms']}ms "
+                f"avg={s['avg_ms']}ms max={s['max_ms']}ms p95={s['p95_ms']}ms"
             )
 
     print("\nreport (json):")
