@@ -1,36 +1,49 @@
 import json
 import os
-import shutil
+from pathlib import Path
 
-# 1. Define where drafts are and where published contracts go
-SOURCE_DIR = "ocsf_normalizer/src/contracts/schemas/"
-REGISTRY_DIR = "shared_registry/v1/"
+# Define root target directory (creates contracts/ if it does not exist)
+OUTPUT_DIR = Path(__file__).parent / "contracts"
+OUTPUT_FILE = OUTPUT_DIR / "ocsf_normalizer_schema.v1.json"
 
-def publish(filename):
-    source_path = os.path.join(SOURCE_DIR, filename)
-    destination_path = os.path.join(REGISTRY_DIR, filename)
+# Valid JSON Schema Draft-07 for OCSF Normalized Event Output
+OCSF_SCHEMA_CONTRACT = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "OCSFNormalizedEvent",
+    "type": "object",
+    "required": ["class_uid", "category_uid", "severity_id", "time", "metadata"],
+    "properties": {
+        "class_uid": {"type": "integer", "description": "OCSF Event Class ID"},
+        "category_uid": {"type": "integer", "description": "OCSF Category ID"},
+        "severity_id": {"type": "integer", "minimum": 0, "maximum": 6},
+        "time": {"type": "string", "format": "date-time"},
+        "metadata": {
+            "type": "object",
+            "properties": {
+                "version": {"type": "string"},
+                "product": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "vendor_name": {"type": "string"}
+                    }
+                }
+            }
+        },
+        "observables": {
+            "type": "array",
+            "items": {"type": "object"}
+        }
+    }
+}
+
+def publish():
+    # Ensure directory exists before writing
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     
-    # Check if the file actually exists
-    if not os.path.exists(source_path):
-        print(f"[-] Error: Contract draft '{filename}' not found in source directory.")
-        return
-        
-    try:
-        # Validate that the file is proper JSON before publishing
-        with open(source_path, 'r') as file:
-            json.load(file)
-            
-        # Ensure the registry directory exists
-        os.makedirs(REGISTRY_DIR, exist_ok=True)
-        
-        # Copy file to publish it
-        shutil.copy2(source_path, destination_path)
-        print(f"[+] Success! '{filename}' has been officially published to the registry.")
-        
-    except json.JSONDecodeError:
-        print(f"[-] Critical: '{filename}' contains invalid JSON formatting. Publishing aborted.")
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(OCSF_SCHEMA_CONTRACT, f, indent=2)
+    print(f"[+] Successfully published OCSF Schema contract to '{OUTPUT_FILE}'")
 
 if __name__ == "__main__":
-    # When your friend drops a file like 'windows_auth.json' in the folder, 
-    # you just type its name here to publish it!
-    publish("windows_auth.json")
+    publish()

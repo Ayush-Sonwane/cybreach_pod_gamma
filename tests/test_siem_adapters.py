@@ -62,7 +62,12 @@ def get_class_uid(norm_obj):
     if hasattr(norm_obj, "to_dict"):
         data = norm_obj.to_dict()
         return data.get("class_uid") or data.get("class_id")
-    if hasattr(norm_obj, "dict"):
+    
+    # Pydantic v2 support (model_dump) & fallback for dict
+    if hasattr(norm_obj, "model_dump"):
+        data = norm_obj.model_dump()
+        return data.get("class_uid") or data.get("class_id")
+    elif hasattr(norm_obj, "dict"):
         data = norm_obj.dict()
         return data.get("class_uid") or data.get("class_id")
 
