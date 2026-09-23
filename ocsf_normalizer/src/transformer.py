@@ -1,25 +1,124 @@
 # src/transformer.py
 
-from typing import Dict, Any
 from datetime import datetime, timezone
+from typing import Any, Dict
 
 
 class FieldTransformer:
     """
-    Stage 2: Field Transformation Engine.
+    Week 6 - OCSF Field Transformation Engine.
 
-    Supports:
-        1. Data type conversion
-        2. Unit normalization
-        3. Enumeration value mapping
-        4. Vendor-specific field mapping
+    Responsibilities:
+        1. Vendor-specific field-name mapping
+        2. Data type conversion
+        3. Unit normalization
+        4. Enumeration mapping
+        5. Timestamp normalization
+        6. Safe handling of None / unexpected values
+
+    Input:
+        vendor: vendor identifier
+        raw_event: vendor-specific event dictionary
+
+    Output:
+        normalized intermediate dictionary
     """
 
-    # ---------------------------------------------------------
+    # =========================================================
+    # FIELD NAME MAPPINGS
+    # =========================================================
+
+    FIELD_MAPPINGS = {
+
+        "sentinel": {
+            "SrcIpAddr": "src_ip",
+            "DstIpAddr": "dst_ip",
+            "SrcPortNumber": "src_port",
+            "DstPortNumber": "dst_port",
+            "TargetUsername": "user_name",
+            "SeverityLevel": "severity",
+            "TimeGenerated": "timestamp",
+        },
+
+        "splunk": {
+            "src_ip": "src_ip",
+            "dest_ip": "dst_ip",
+            "src_port": "src_port",
+            "dest_port": "dst_port",
+            "user": "user_name",
+            "vendor_severity": "severity",
+            "_time": "timestamp",
+        },
+
+        "ecs": {
+            "source.ip": "src_ip",
+            "destination.ip": "dst_ip",
+            "source.port": "src_port",
+            "destination.port": "dst_port",
+            "event.outcome": "outcome",
+            "@timestamp": "timestamp",
+        },
+
+        "qradar": {
+            "sourceip": "src_ip",
+            "destinationip": "dst_ip",
+            "sourceport": "src_port",
+            "destinationport": "dst_port",
+            "username": "user_name",
+            "magnitude": "severity",
+            "starttime": "timestamp",
+        },
+
+        "logscale": {
+            "aip": "src_ip",
+            "timestamp": "timestamp",
+            "@timestamp": "timestamp",
+            "loglevel": "severity",
+        },
+    }
+
+    # =========================================================
     # ENUMERATION MAPPINGS
-    # ---------------------------------------------------------
+    # =========================================================
 
     ENUM_MAPPINGS = {
+
+        "sentinel": {
+            "severity": {
+                "informational": 1,
+                "info": 1,
+                "low": 1,
+                "medium": 2,
+                "high": 3,
+                "critical": 4,
+            },
+            "action": {
+                "allow": "Allow",
+                "allowed": "Allow",
+                "block": "Block",
+                "blocked": "Block",
+                "deny": "Block",
+                "denied": "Block",
+            },
+        },
+
+        "splunk": {
+            "severity": {
+                "low": 1,
+                "medium": 2,
+                "high": 3,
+                "critical": 4,
+            },
+            "action": {
+                "allow": "Allow",
+                "allowed": "Allow",
+                "block": "Block",
+                "blocked": "Block",
+                "deny": "Block",
+                "denied": "Block",
+            },
+        },
+
         "qradar": {
             "severity": {
                 "low": 1,
@@ -35,112 +134,29 @@ class FieldTransformer:
             },
         },
 
-        "splunk": {
-            "severity": {
-                "low": 1,
-                "medium": 2,
-                "high": 3,
-                "critical": 4,
-            },
-            "action": {
-                "allowed": "Allow",
-                "allow": "Allow",
-                "blocked": "Block",
-                "block": "Block",
-                "denied": "Block",
-                "deny": "Block",
-            },
-        },
-
-        "sentinel": {
-            "severity": {
-                "Informational": 1,
-                "Low": 2,
-                "Medium": 3,
-                "High": 4,
-            },
-            "action": {
-                "Allow": "Allow",
-                "Allowed": "Allow",
-                "Block": "Block",
-                "Blocked": "Block",
-                "Deny": "Block",
-                "Denied": "Block",
-            },
-        },
-
         "logscale": {
             "severity": {
                 "debug": 0,
                 "info": 1,
                 "warning": 2,
+                "warn": 2,
                 "error": 3,
                 "critical": 4,
-            }
+            },
         },
 
         "ecs": {
-            "event.outcome": {
+            "outcome": {
                 "success": "Success",
                 "failure": "Failure",
                 "unknown": "Unknown",
-            }
+            },
         },
     }
 
-    # ---------------------------------------------------------
-    # FIELD NAME MAPPINGS
-    # ---------------------------------------------------------
-
-    FIELD_MAPPINGS = {
-        "qradar": {
-            "sourceip": "src_ip",
-            "destinationip": "dst_ip",
-            "sourceport": "src_port",
-            "destinationport": "dst_port",
-            "username": "user_name",
-            "magnitude": "severity",
-            "starttime": "timestamp",
-        },
-
-        "splunk": {
-            "src_ip": "src_ip",
-            "dest_ip": "dst_ip",
-            "src_port": "src_port",
-            "dest_port": "dst_port",
-            "user": "user_name",
-            "vendor_severity": "severity",
-            "_time": "timestamp",
-        },
-
-        "sentinel": {
-            "SrcIpAddr": "src_ip",
-            "DstIpAddr": "dst_ip",
-            "SrcPortNumber": "src_port",
-            "DstPortNumber": "dst_port",
-            "TargetUsername": "user_name",
-            "TimeGenerated": "timestamp",
-        },
-
-        "logscale": {
-            "aip": "src_ip",
-            "timestamp": "timestamp",
-            "@timestamp": "timestamp",
-            "loglevel": "severity",
-        },
-
-        "ecs": {
-            "source.ip": "src_ip",
-            "destination.ip": "dst_ip",
-            "source.port": "src_port",
-            "destination.port": "dst_port",
-            "event.outcome": "outcome",
-        },
-    }
-
-    # ---------------------------------------------------------
-    # MAIN TRANSFORMATION METHOD
-    # ---------------------------------------------------------
+    # =========================================================
+    # MAIN TRANSFORMATION
+    # =========================================================
 
     @classmethod
     def transform(
@@ -149,49 +165,51 @@ class FieldTransformer:
         raw_event: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        Transform vendor-specific event into a normalized
+        Transform a vendor-specific event into a normalized
         intermediate representation.
         """
 
         if not isinstance(raw_event, dict):
             raise TypeError("raw_event must be a dictionary")
 
+        vendor = vendor.lower().strip()
+
         transformed = {}
 
         field_mapping = cls.FIELD_MAPPINGS.get(vendor, {})
 
-        for source_field, value in raw_event.items():
+        for source_field, raw_value in raw_event.items():
 
-            # ---------------------------------------------
+            # -------------------------------------------------
             # 1. FIELD NAME MAPPING
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             target_field = field_mapping.get(
                 source_field,
                 source_field
             )
 
-            # ---------------------------------------------
+            # -------------------------------------------------
             # 2. DATA TYPE CONVERSION
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             value = cls.convert_datatype(
                 target_field,
-                value
+                raw_value
             )
 
-            # ---------------------------------------------
+            # -------------------------------------------------
             # 3. UNIT NORMALIZATION
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             value = cls.normalize_unit(
                 target_field,
                 value
             )
 
-            # ---------------------------------------------
+            # -------------------------------------------------
             # 4. ENUMERATION MAPPING
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             value = cls.map_enum(
                 vendor,
@@ -203,12 +221,13 @@ class FieldTransformer:
 
         return transformed
 
-    # ---------------------------------------------------------
+    # =========================================================
     # DATA TYPE CONVERSION
-    # ---------------------------------------------------------
+    # =========================================================
 
-    @staticmethod
+    @classmethod
     def convert_datatype(
+        cls,
         field_name: str,
         value: Any,
     ) -> Any:
@@ -216,38 +235,62 @@ class FieldTransformer:
         if value is None:
             return None
 
-        # Port numbers → integer
+        # -----------------------------------------------------
+        # PORT
+        # -----------------------------------------------------
+
         if field_name in {
             "src_port",
             "dst_port",
             "source_port",
             "destination_port",
         }:
+
             try:
                 return int(value)
+
             except (ValueError, TypeError):
                 return value
 
-        # Severity → integer
+        # -----------------------------------------------------
+        # SEVERITY
+        # -----------------------------------------------------
+
         if field_name == "severity":
+
             try:
                 return int(value)
+
             except (ValueError, TypeError):
                 return value
 
-        # Timestamp → ISO 8601
-        if field_name == "timestamp":
-            return FieldTransformer.convert_timestamp(value)
+        # -----------------------------------------------------
+        # TIMESTAMP
+        # -----------------------------------------------------
 
-        # Boolean fields
         if field_name in {
-            "is_success",
+            "timestamp",
+            "time",
+        }:
+
+            return cls.convert_timestamp(value)
+
+        # -----------------------------------------------------
+        # BOOLEAN
+        # -----------------------------------------------------
+
+        if field_name in {
             "success",
+            "is_success",
             "enabled",
         }:
-            return FieldTransformer.convert_boolean(value)
 
-        # String normalization
+            return cls.convert_boolean(value)
+
+        # -----------------------------------------------------
+        # STRING FIELDS
+        # -----------------------------------------------------
+
         if field_name in {
             "src_ip",
             "dst_ip",
@@ -256,13 +299,14 @@ class FieldTransformer:
             "action",
             "outcome",
         }:
+
             return str(value).strip()
 
         return value
 
-    # ---------------------------------------------------------
+    # =========================================================
     # BOOLEAN CONVERSION
-    # ---------------------------------------------------------
+    # =========================================================
 
     @staticmethod
     def convert_boolean(value: Any) -> Any:
@@ -271,6 +315,7 @@ class FieldTransformer:
             return value
 
         if isinstance(value, str):
+
             value_lower = value.strip().lower()
 
             if value_lower in {
@@ -292,14 +337,14 @@ class FieldTransformer:
             }:
                 return False
 
-        if isinstance(value, int):
+        if isinstance(value, (int, float)):
             return value != 0
 
         return value
 
-    # ---------------------------------------------------------
+    # =========================================================
     # TIMESTAMP CONVERSION
-    # ---------------------------------------------------------
+    # =========================================================
 
     @staticmethod
     def convert_timestamp(value: Any) -> Any:
@@ -309,33 +354,47 @@ class FieldTransformer:
 
         # Already datetime
         if isinstance(value, datetime):
-            if value.tzinfo is None:
-                value = value.replace(tzinfo=timezone.utc)
 
-            return value.isoformat()
+            if value.tzinfo is None:
+                value = value.replace(
+                    tzinfo=timezone.utc
+                )
+
+            return int(
+                value.timestamp() * 1000
+            )
 
         # Numeric Unix timestamp
         if isinstance(value, (int, float)):
 
-            # milliseconds
-            if value > 10_000_000_000:
-                value = value / 1000
+            # Seconds → milliseconds
+            if value < 10_000_000_000:
 
-            try:
-                return datetime.fromtimestamp(
-                    value,
-                    tz=timezone.utc
-                ).isoformat()
+                return int(value * 1000)
 
-            except (ValueError, OverflowError, OSError):
-                return value
+            # Already milliseconds
+            return int(value)
 
         # String timestamp
         if isinstance(value, str):
 
             value = value.strip()
 
+            # Numeric timestamp stored as string
             try:
+
+                numeric_value = float(value)
+
+                return FieldTransformer.convert_timestamp(
+                    numeric_value
+                )
+
+            except ValueError:
+                pass
+
+            # ISO-8601 timestamp
+            try:
+
                 parsed = datetime.fromisoformat(
                     value.replace("Z", "+00:00")
                 )
@@ -345,16 +404,18 @@ class FieldTransformer:
                         tzinfo=timezone.utc
                     )
 
-                return parsed.isoformat()
+                return int(
+                    parsed.timestamp() * 1000
+                )
 
             except ValueError:
                 return value
 
         return value
 
-    # ---------------------------------------------------------
+    # =========================================================
     # UNIT NORMALIZATION
-    # ---------------------------------------------------------
+    # =========================================================
 
     @staticmethod
     def normalize_unit(
@@ -365,57 +426,45 @@ class FieldTransformer:
         if value is None:
             return None
 
-        # Network byte fields
-        if field_name in {
-            "bytes",
-            "network_bytes",
-        }:
-
-            try:
-                return int(value)
-            except (ValueError, TypeError):
-                return value
-
-        # Duration normalization
+        # -----------------------------------------------------
+        # Duration fields
         #
-        # Standard output = milliseconds
-        #
+        # Internally normalize durations to milliseconds.
+        # -----------------------------------------------------
+
         if field_name in {
             "duration_ms",
             "duration",
         }:
 
-            if isinstance(value, (int, float)):
-                return float(value)
+            try:
+                return int(float(value))
 
-            if isinstance(value, str):
+            except (ValueError, TypeError):
+                return value
 
-                value = value.strip().lower()
+        # -----------------------------------------------------
+        # Size fields
+        #
+        # OCSF representation uses bytes.
+        # -----------------------------------------------------
 
-                try:
-                    if value.endswith("ms"):
-                        return float(
-                            value[:-2].strip()
-                        )
+        if field_name in {
+            "file_size",
+            "size_bytes",
+        }:
 
-                    if value.endswith("s"):
-                        return float(
-                            value[:-1].strip()
-                        ) * 1000
+            try:
+                return int(value)
 
-                    if value.endswith("m"):
-                        return float(
-                            value[:-1].strip()
-                        ) * 60 * 1000
-
-                except ValueError:
-                    return value
+            except (ValueError, TypeError):
+                return value
 
         return value
 
-    # ---------------------------------------------------------
+    # =========================================================
     # ENUMERATION MAPPING
-    # ---------------------------------------------------------
+    # =========================================================
 
     @classmethod
     def map_enum(
@@ -424,6 +473,9 @@ class FieldTransformer:
         field_name: str,
         value: Any,
     ) -> Any:
+
+        if value is None:
+            return None
 
         vendor_mapping = cls.ENUM_MAPPINGS.get(
             vendor,
@@ -438,36 +490,21 @@ class FieldTransformer:
         if not field_mapping:
             return value
 
+        # Case-insensitive mapping
         if isinstance(value, str):
 
+            normalized_value = value.strip().lower()
+
+            # Build case-insensitive lookup
             for source_value, target_value in field_mapping.items():
 
-                if value.lower() == source_value.lower():
+                if normalized_value == str(
+                    source_value
+                ).lower():
+
                     return target_value
 
         return field_mapping.get(
             value,
             value
         )
-if __name__ == "__main__":
-    import json
-
-    print("Enter raw event as JSON:")
-    user_input = input(" ")
-
-    try:
-        raw_event = json.loads(user_input)
-
-        result = FieldTransformer.transform("qradar", raw_event)
-
-        print("\nRaw Event:")   
-        print(raw_event)
-
-        print("\nTransformed Event:")
-        print(result)
-
-    except json.JSONDecodeError:
-        print("Invalid JSON input.")
-
-    except Exception as e:
-        print(f"Error: {e}")

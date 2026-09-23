@@ -1,6 +1,10 @@
 fastapi>=0.115.0
 pydantic>=2.9.0
 uvicorn>=0.30.0
+httpx2>=0.27.0
 pytest>=8.3.0
 httpx>=0.27.0
+<<<<<<< HEAD
 
+=======
+>>>>>>> 6f2d21fd01ab3671b3a4d6f256dbb9e2a1876f1f

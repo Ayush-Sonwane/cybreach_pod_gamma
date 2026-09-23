@@ -17,7 +17,15 @@ class SchemaDetector:
         if "@timestamp" in keys and ("aip" in keys or "loglevel" in keys):
             return "logscale"
 
-        # 3. Splunk CIM Rules
+        # 3. Generic Webhook Rules (custom SIEM solutions)
+        #    Requires an event descriptor plus a timestamp key. Placed after
+        #    the vendor-specific rules so it does not shadow them, but before
+        #    the Splunk rule (webhook payloads may also carry src_ip/dest_ip).
+        if (("event_type" in keys or "event_name" in keys or "event_id" in keys)
+                and any(k in keys for k in ("timestamp", "event_time", "occurred_at", "@timestamp", "datetime"))):
+            return "webhook"
+
+        # 4. Splunk CIM Rules
         if "vendor_severity" in keys or "src_ip" in keys or "dest_ip" in keys:
             return "splunk"
 
