@@ -1,0 +1,286 @@
+[
+  {
+    "@timestamp": "2026-08-01T00:00:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "success",
+    "source.ip": "10.0.0.15",
+    "source.port": "50000",
+    "destination.ip": "dc01.corp.local",
+    "event.severity": 1,
+    "event": {
+      "outcome": "success",
+      "category": "authentication"
+    },
+    "user": {
+      "name": "admin",
+      "id": "uid-0"
+    }
+  },
+  {
+    "@timestamp": "2026-08-02T01:01:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_logout",
+    "event.outcome": "failure",
+    "user.name": "admin",
+    "source.ip": "192.168.1.50",
+    "source.port": "50001",
+    "destination.ip": "web01.corp.local",
+    "event.severity": 2
+  },
+  {
+    "@timestamp": "2026-08-03T02:02:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "success",
+    "user.name": "svc_webapp",
+    "source.ip": "172.16.10.5",
+    "source.port": "50002",
+    "destination.ip": "db01.corp.local",
+    "event.severity": 3
+  },
+  {
+    "@timestamp": "2026-08-04T03:03:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "success",
+    "user.name": "john.doe",
+    "source.ip": "10.1.1.20",
+    "source.port": "50003",
+    "destination.ip": "10.0.0.1",
+    "event.severity": 4
+  },
+  {
+    "@timestamp": "2026-08-05T04:04:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "failure",
+    "source.ip": "192.168.10.12",
+    "source.port": "50004",
+    "destination.ip": "10.0.0.2",
+    "event.severity": 5,
+    "event": {
+      "outcome": "success",
+      "category": "authentication"
+    },
+    "user": {
+      "name": "it-admin",
+      "id": "uid-4"
+    }
+  },
+  {
+    "@timestamp": "2026-08-06T05:05:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_logout",
+    "event.outcome": "success",
+    "user.name": "it-admin",
+    "source.ip": "10.0.1.7",
+    "source.port": "50005",
+    "destination.ip": "dc01.corp.local",
+    "event.severity": 6
+  },
+  {
+    "@timestamp": "2026-08-07T06:06:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "success",
+    "user.name": "krishna.k",
+    "source.ip": "203.0.113.42",
+    "source.port": "50006",
+    "destination.ip": "web01.corp.local",
+    "event.severity": 7
+  },
+  {
+    "@timestamp": "2026-08-08T07:07:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "failure",
+    "user.name": "pradeep.p",
+    "source.ip": "198.51.100.8",
+    "source.port": "50007",
+    "destination.ip": "db01.corp.local",
+    "event.severity": 1
+  },
+  {
+    "@timestamp": "2026-08-09T08:08:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "success",
+    "source.ip": "172.20.0.3",
+    "source.port": "50008",
+    "destination.ip": "10.0.0.1",
+    "event.severity": 2,
+    "event": {
+      "outcome": "success",
+      "category": "authentication"
+    },
+    "user": {
+      "name": "ayush.r",
+      "id": "uid-8"
+    }
+  },
+  {
+    "@timestamp": "2026-08-10T00:09:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_logout",
+    "event.outcome": "success",
+    "user.name": "ayush.r",
+    "source.ip": "10.10.0.99",
+    "source.port": "50009",
+    "destination.ip": "10.0.0.2",
+    "event.severity": 3
+  },
+  {
+    "@timestamp": "2026-08-11T01:10:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "failure",
+    "user.name": "soc_analyst",
+    "source.ip": "192.168.88.14",
+    "source.port": "50010",
+    "destination.ip": "dc01.corp.local",
+    "event.severity": 4
+  },
+  {
+    "@timestamp": "2026-08-12T02:11:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "success",
+    "user.name": "guest",
+    "source.ip": "172.31.2.1",
+    "source.port": "50011",
+    "destination.ip": "web01.corp.local",
+    "event.severity": 5
+  },
+  {
+    "@timestamp": "2026-08-13T03:12:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "success",
+    "source.ip": "10.0.0.15",
+    "source.port": "50012",
+    "destination.ip": "db01.corp.local",
+    "event.severity": 6,
+    "event": {
+      "outcome": "success",
+      "category": "authentication"
+    },
+    "user": {
+      "name": "db_sa",
+      "id": "uid-12"
+    }
+  },
+  {
+    "@timestamp": "2026-08-14T04:13:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_logout",
+    "event.outcome": "failure",
+    "user.name": "db_sa",
+    "source.ip": "192.168.1.50",
+    "source.port": "50013",
+    "destination.ip": "10.0.0.1",
+    "event.severity": 7
+  },
+  {
+    "@timestamp": "2026-08-15T05:14:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "success",
+    "user.name": "app_service",
+    "source.ip": "172.16.10.5",
+    "source.port": "50014",
+    "destination.ip": "10.0.0.2",
+    "event.severity": 1
+  },
+  {
+    "@timestamp": "2026-08-16T06:15:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "success",
+    "user.name": "ticket-user",
+    "source.ip": "10.1.1.20",
+    "source.port": "50015",
+    "destination.ip": "dc01.corp.local",
+    "event.severity": 2
+  },
+  {
+    "@timestamp": "2026-08-17T07:16:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "failure",
+    "source.ip": "192.168.10.12",
+    "source.port": "50016",
+    "destination.ip": "web01.corp.local",
+    "event.severity": 3,
+    "event": {
+      "outcome": "success",
+      "category": "authentication"
+    },
+    "user": {
+      "name": "admin",
+      "id": "uid-16"
+    }
+  },
+  {
+    "@timestamp": "2026-08-18T08:17:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_logout",
+    "event.outcome": "success",
+    "user.name": "admin",
+    "source.ip": "10.0.1.7",
+    "source.port": "50017",
+    "destination.ip": "db01.corp.local",
+    "event.severity": 4
+  },
+  {
+    "@timestamp": "2026-08-19T00:18:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "success",
+    "user.name": "svc_webapp",
+    "source.ip": "203.0.113.42",
+    "source.port": "50018",
+    "destination.ip": "10.0.0.1",
+    "event.severity": 5
+  },
+  {
+    "@timestamp": "2026-08-20T01:19:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "failure",
+    "user.name": "john.doe",
+    "source.ip": "198.51.100.8",
+    "source.port": "50019",
+    "destination.ip": "10.0.0.2",
+    "event.severity": 6
+  },
+  {
+    "@timestamp": "2026-08-21T02:20:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_login",
+    "event.outcome": "success",
+    "source.ip": "172.20.0.3",
+    "source.port": "50020",
+    "destination.ip": "dc01.corp.local",
+    "event.severity": 7,
+    "event": {
+      "outcome": "success",
+      "category": "authentication"
+    },
+    "user": {
+      "name": "it-admin",
+      "id": "uid-20"
+    }
+  },
+  {
+    "@timestamp": "2026-08-22T03:21:00.000Z",
+    "event.category": "authentication",
+    "event.action": "user_logout",
+    "event.outcome": "unknown",
+    "user.name": "it-admin",
+    "source.ip": "10.10.0.99",
+    "source.port": "50021",
+    "destination.ip": "web01.corp.local",
+    "event.severity": 1
+  }
+]

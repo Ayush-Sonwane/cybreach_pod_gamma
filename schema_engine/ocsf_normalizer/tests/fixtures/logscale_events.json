@@ -1,0 +1,218 @@
+[
+  {
+    "@timestamp": "2026-08-01T08:00:00.000Z",
+    "aip": "10.0.0.15",
+    "endpoint_ip": "dc01.corp.local",
+    "user": "deepali.panchal",
+    "event_type": "user_login",
+    "status": "success",
+    "loglevel": "info",
+    "user_name": "svc_webapp",
+    "src_ip": "192.168.1.50",
+    "outcome": "failed",
+    "action": "user_login"
+  },
+  {
+    "@timestamp": "2026-08-02T08:01:00.000Z",
+    "aip": "192.168.1.50",
+    "endpoint_ip": "web01.corp.local",
+    "user": "admin",
+    "event_type": "user_logout",
+    "status": "failure",
+    "loglevel": "warn"
+  },
+  {
+    "@timestamp": "2026-08-03T08:02:00.000Z",
+    "aip": "172.16.10.5",
+    "endpoint_ip": "db01.corp.local",
+    "user": "svc_webapp",
+    "event_type": "user_login",
+    "status": "success",
+    "loglevel": "error"
+  },
+  {
+    "@timestamp": "2026-08-04T08:03:00.000Z",
+    "aip": "10.1.1.20",
+    "endpoint_ip": "10.0.0.1",
+    "user": "john.doe",
+    "event_type": "user_login",
+    "status": "success",
+    "loglevel": "critical"
+  },
+  {
+    "@timestamp": "2026-08-05T08:04:00.000Z",
+    "aip": "192.168.10.12",
+    "endpoint_ip": "10.0.0.2",
+    "user": "mary.smith",
+    "event_type": "user_login",
+    "status": "failure",
+    "loglevel": "info"
+  },
+  {
+    "@timestamp": "2026-08-06T08:05:00.000Z",
+    "aip": "10.0.1.7",
+    "endpoint_ip": "dc01.corp.local",
+    "user": "it-admin",
+    "event_type": "user_logout",
+    "status": "success",
+    "loglevel": "warn",
+    "user_name": "pradeep.p",
+    "src_ip": "203.0.113.42"
+  },
+  {
+    "@timestamp": "2026-08-07T08:06:00.000Z",
+    "aip": "203.0.113.42",
+    "endpoint_ip": "web01.corp.local",
+    "user": "krishna.k",
+    "event_type": "user_login",
+    "status": "success",
+    "loglevel": "error"
+  },
+  {
+    "@timestamp": "2026-08-08T08:07:00.000Z",
+    "aip": "198.51.100.8",
+    "endpoint_ip": "db01.corp.local",
+    "user": "pradeep.p",
+    "event_type": "user_login",
+    "status": "failure",
+    "loglevel": "critical",
+    "outcome": "failed",
+    "action": "user_login"
+  },
+  {
+    "@timestamp": "2026-08-09T08:08:00.000Z",
+    "aip": "172.20.0.3",
+    "endpoint_ip": "10.0.0.1",
+    "user": "arsha.k",
+    "event_type": "user_login",
+    "status": "success",
+    "loglevel": "info"
+  },
+  {
+    "@timestamp": "2026-08-10T08:09:00.000Z",
+    "aip": "10.10.0.99",
+    "endpoint_ip": "10.0.0.2",
+    "user": "ayush.r",
+    "event_type": "user_logout",
+    "status": "success",
+    "loglevel": "warn"
+  },
+  {
+    "@timestamp": "2026-08-11T08:10:00.000Z",
+    "aip": "192.168.88.14",
+    "endpoint_ip": "dc01.corp.local",
+    "user": "soc_analyst",
+    "event_type": "user_login",
+    "status": "failure",
+    "loglevel": "error",
+    "user_name": "deployment_bot",
+    "src_ip": "172.31.2.1"
+  },
+  {
+    "@timestamp": "2026-08-12T08:11:00.000Z",
+    "aip": "172.31.2.1",
+    "endpoint_ip": "web01.corp.local",
+    "user": "guest",
+    "event_type": "user_login",
+    "status": "success",
+    "loglevel": "critical"
+  },
+  {
+    "@timestamp": "2026-08-13T08:12:00.000Z",
+    "aip": "10.0.0.15",
+    "endpoint_ip": "db01.corp.local",
+    "user": "deployment_bot",
+    "event_type": "user_login",
+    "status": "success",
+    "loglevel": "info"
+  },
+  {
+    "@timestamp": "2026-08-14T08:13:00.000Z",
+    "aip": "192.168.1.50",
+    "endpoint_ip": "10.0.0.1",
+    "user": "db_sa",
+    "event_type": "user_logout",
+    "status": "failure",
+    "loglevel": "warn"
+  },
+  {
+    "@timestamp": "2026-08-15T08:14:00.000Z",
+    "aip": "172.16.10.5",
+    "endpoint_ip": "10.0.0.2",
+    "user": "app_service",
+    "event_type": "user_login",
+    "status": "success",
+    "loglevel": "error",
+    "outcome": "failed",
+    "action": "user_login"
+  },
+  {
+    "@timestamp": "2026-08-16T08:15:00.000Z",
+    "aip": "10.1.1.20",
+    "endpoint_ip": "dc01.corp.local",
+    "user": "ticket-user",
+    "event_type": "user_login",
+    "status": "success",
+    "loglevel": "critical",
+    "user_name": "admin",
+    "src_ip": "192.168.10.12"
+  },
+  {
+    "@timestamp": "2026-08-17T08:16:00.000Z",
+    "aip": "192.168.10.12",
+    "endpoint_ip": "web01.corp.local",
+    "user": "deepali.panchal",
+    "event_type": "user_login",
+    "status": "failure",
+    "loglevel": "info"
+  },
+  {
+    "@timestamp": "2026-08-18T08:17:00.000Z",
+    "aip": "10.0.1.7",
+    "endpoint_ip": "db01.corp.local",
+    "user": "admin",
+    "event_type": "user_logout",
+    "status": "success",
+    "loglevel": "warn"
+  },
+  {
+    "@timestamp": "2026-08-19T08:18:00.000Z",
+    "aip": "203.0.113.42",
+    "endpoint_ip": "10.0.0.1",
+    "user": "svc_webapp",
+    "event_type": "user_login",
+    "status": "success",
+    "loglevel": "error"
+  },
+  {
+    "@timestamp": "2026-08-20T08:19:00.000Z",
+    "aip": "198.51.100.8",
+    "endpoint_ip": "10.0.0.2",
+    "user": "john.doe",
+    "event_type": "user_login",
+    "status": "failure",
+    "loglevel": "critical"
+  },
+  {
+    "@timestamp": "2026-08-21T08:20:00.000Z",
+    "aip": "172.20.0.3",
+    "endpoint_ip": "dc01.corp.local",
+    "user": "mary.smith",
+    "event_type": "user_login",
+    "status": "success",
+    "loglevel": "info",
+    "user_name": "krishna.k",
+    "src_ip": "10.10.0.99"
+  },
+  {
+    "@timestamp": 1711921260000,
+    "aip": "10.10.0.99",
+    "endpoint_ip": "web01.corp.local",
+    "user": "it-admin",
+    "event_type": "user_logout",
+    "status": "success",
+    "loglevel": "warn",
+    "outcome": "failed",
+    "action": "user_login"
+  }
+]
