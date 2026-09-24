@@ -11,18 +11,19 @@ frontend, SQL migrations, and a small contract-publishing utility.
 
 ```
 cybreach_pod_gamma/
-├── ocsf_normalizer/        Microservice 1 — OCSF Normalization API
+├── ocsf_normalizer/        Microservice 1 — OCSF Normalization API (port 8005)
 │   ├── src/                Production code (adapters, validators, webhook, DLQ)
 │   ├── tests/              Pytest suite + fixtures
 │   ├── schemas/            Vendor → OCSF mapping JSON (asim, ecs, splunk)
 │   └── migration/          SQL migrations (webhook & custom OCSF classes)
-├── revalidation_service/   Microservice 2 — OCSF Re-Validation API + scheduler
-│   ├── src/                Production code (delta engine, scheduler, schedules API)
-│   ├── tests/              Pytest suite
-│   └── SCHEDULER_CONTRACT.md   Frozen scheduler behavior contract (v1)
-├── frontend/               React + Vite UI for webhook connector management
+├── revalidation_service/   Microservice 2 — OCSF Re-Validation API (port 8006)
+│   ├── src/                Production code (delta engine, history store, wallet)
+│   └── tests/              Pytest suite
+├── frontend/               React + Vite UI for webhook connector management (port 5174)
 ├── migration/              Shared SQL migrations
-└── publish_contract.py     Publishes contract JSON into shared_registry/v1/
+├── contracts/              Published OCSF schema contract (JSON Schema)
+├── shared_registry/v1/     Cross-pod contract samples
+└── publish_contract.py     Publishes contract JSON into contracts/
 ```
 
 
@@ -60,7 +61,7 @@ Key modules:
 ```bash
 cd ocsf_normalizer
 pip install -r requirements.txt
-uvicorn src.main:app --reload
+uvicorn src.main:app --host 0.0.0.0 --port 8005
 ```
 
 Environment variables: `OCSF_POOL_WORKERS` (process pool size for batch
@@ -103,27 +104,21 @@ Key modules:
 | Module | Purpose |
 |--------|---------|
 | `src/service/delta_engine.py` | Deep before/after event comparison (nested changes) |
-| `src/service/scheduler.py` | Fixed-delay background scheduler |
-| `src/scheduling/` | Schedule CRUD API, interval models, missed-run policy |
-| `src/repository.py` | SQLite persistence with idempotency & history |
-
-Behavioral guarantees are frozen in `SCHEDULER_CONTRACT.md` (single execution
-path, no overlapping runs, run-now always available, failures recorded as data).
+| `src/service/history_store.py` | SQLite persistence of re-validation runs |
+| `src/service/scoring.py` | Snapshot building (validation + confidence) |
+| `src/wallet.py` | Mock credit wallet (plan Section 9: 1 credit per re-validation) |
+| `src/core/contracts.py` | Re-validation / delta report schemas |
 
 #### Run
 
 ```bash
 cd revalidation_service
 pip install -r requirements.txt
-uvicorn src.main:app --reload
+uvicorn src.main:app --host 0.0.0.0 --port 8006
 ```
 
-Environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REVALIDATION_SCHEDULER_ENABLED` | `false` | Enable automatic scheduling at startup |
-| `REVALIDATION_SCHEDULER_INTERVAL_SECONDS` | `300` | Delay between run end and next run start |
+Credit behavior: each `POST /api/v2/revalidate` debits 1 credit; an
+`UNCHANGED` run is refunded. A run with no credits returns HTTP 402.
 
 #### API
 
@@ -131,15 +126,13 @@ Environment variables:
 |--------|------|-------------|
 | GET | `/` | Service banner |
 | GET | `/health` | Liveness probe |
-| POST | `/api/v2/revalidate` | Re-validate an event (requires `Idempotency-Key` header) |
-| GET | `/api/v2/revalidate/{re_run_id}/delta` | Field-by-field delta for a run |
-| GET | `/api/v2/revalidate/scheduler/status` | Scheduler settings, state, and run history |
-| POST | `/api/v2/revalidate/scheduler/run-now` | Trigger exactly one manual run |
-| PUT | `/api/v2/revalidate/scheduler/config` | Update `enabled` / `interval_seconds` at runtime |
-| POST | `/api/v2/revalidate/schedules` | Create an automated schedule |
-| GET | `/api/v2/revalidate/schedules` | List schedules |
-| GET | `/api/v2/revalidate/schedules/{id}` | Get a schedule |
-| DELETE | `/api/v2/revalidate/schedules/{id}` | Delete a schedule |
+| POST | `/api/v2/revalidate` | Re-validate an event (debits 1 credit, refunds on `UNCHANGED`) |
+| GET | `/api/v2/revalidate/wallet` | Mock wallet balance |
+| POST | `/api/v2/revalidate/compare` | Stateless before/after comparison |
+| GET | `/api/v2/revalidate/runs` | List stored runs |
+| GET | `/api/v2/revalidate/runs/{run_id}` | Get a stored run |
+| GET | `/api/v2/revalidate/metrics` | Aggregate improvement report |
+| GET | `/api/v2/revalidate/rules/compare` | Rule/version comparison (requires `v1`/`v2` query params) |
 
 #### Tests
 
@@ -151,13 +144,13 @@ pytest
 ### 3. Frontend (`frontend/`)
 
 React + Vite dashboard for managing webhook connectors and viewing ingestion
-health metrics from the normalizer service. It proxies to
-`/api/v2/webhook/*`.
+health metrics from the normalizer service. It proxies `/api` to the OCSF
+normalizer on port `8005`.
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev        # http://localhost:5174
 ```
 
 ## Database migrations
@@ -172,19 +165,22 @@ connectors, custom OCSF class registry).
 
 ## Contract publishing
 
-`publish_contract.py` copies a validated contract draft from
-`ocsf_normalizer/src/contracts/schemas/` into `shared_registry/v1/`:
+`publish_contract.py` writes the frozen OCSF normalized-event schema contract
+(JSON Schema Draft-07) into `contracts/ocsf_normalizer_schema.v1.json`. This
+`contracts/` directory is the pod's cross-pod publish target (per the Module 2
+integration plan):
 
 ```bash
-python publish_contract.py   # publishes windows_auth.json by default
+python publish_contract.py
 ```
 
-The registry is intentionally safe: invalid JSON is rejected and nothing is
-overwritten implicitly.
+`shared_registry/v1/windows_auth.json` is a field-mapping sample retained for
+cross-pod reference.
 
 ## Testing all services
 
-Run from the repository root (root `pytest.ini` targets `ocsf_normalizer/tests`):
+Run from the repository root (root `pytest.ini` targets
+`ocsf_normalizer/tests` and `revalidation_service/tests`):
 
 ```bash
 pytest

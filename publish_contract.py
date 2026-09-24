@@ -1,3 +1,11 @@
+"""
+Publishes the frozen OCSF normalized-event schema contract.
+
+Writes `contracts/ocsf_normalizer_schema.v1.json` (JSON Schema Draft-07).
+Per the Module 2 integration plan, the root `contracts/` directory is the
+cross-pod contract-publish target (M5): all pods consume root contracts, not
+pod-local copies.
+"""
 import json
 import os
 from pathlib import Path
