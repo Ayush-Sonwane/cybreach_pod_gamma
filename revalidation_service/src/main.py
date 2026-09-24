@@ -13,6 +13,7 @@ Note: full API hardening (error handling, idempotency) is scope of Task 4.
 import uuid
 from typing import Any, Dict, List, Optional
 
+import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -60,6 +61,11 @@ def _baseline_snapshot(event_id: str, vendor: str) -> EventSnapshot:
 @app.get("/")
 def home():
     return {"message": f"{settings.service_name} is running"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "revalidation-service"}
 
 
 @app.post("/api/v2/revalidate", response_model=RevalidationRun)
@@ -119,3 +125,7 @@ def rule_version_comparison(
 ):
     """History-based rule/version comparison: rule sets recorded at v1 vs v2."""
     return compare_rule_versions(store.all_runs(), v1, v2)
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8006)

@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any, Dict, List
 
+import uvicorn
 from fastapi import FastAPI, HTTPException, Header, Request
 from pydantic import BaseModel, Field
 
@@ -75,6 +76,14 @@ class WebhookConnectorRequest(BaseModel):
 def home():
     return {
         "message": "OCSF Normalization API is running"
+    }
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "service": "ocsf-normalizer",
     }
 
 
@@ -414,3 +423,7 @@ def list_webhook_connectors():
     return {
         "connectors": connector_repository.list_connectors(),
     }
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8005)
