@@ -31,6 +31,7 @@ from src.service.delta_engine import (
 )
 from src.service.history_store import RevalidationHistoryStore
 from src.service.scoring import build_snapshot
+from src.wallet import wallet
 
 settings = get_settings()
 store = RevalidationHistoryStore(settings.db_path)
@@ -74,9 +75,15 @@ def revalidate(request: RevalidateRequest):
 
     First submission for an event_id compares against an empty baseline,
     so even the initial result produces a measurable improvement delta.
+
+    Re-validation debits 1 credit per run (plan Section 9); the credit is
+    refunded when the run verdict is UNCHANGED (no meaningful delta).
     """
     if not request.normalized:
         raise HTTPException(status_code=400, detail="'normalized' payload must not be empty")
+
+    if not wallet.debit(1):
+        raise HTTPException(status_code=402, detail="insufficient credits")
 
     after = build_snapshot(request.event_id, request.vendor, request.normalized)
     before = store.latest_after(request.event_id) or _baseline_snapshot(
@@ -85,7 +92,17 @@ def revalidate(request: RevalidateRequest):
 
     run = evaluate(before, after, run_id=uuid.uuid4().hex)
     store.save_run(run)
+
+    if run.verdict == "UNCHANGED":
+        wallet.refund(1)
+
     return run
+
+
+@app.get("/api/v2/revalidate/wallet")
+def wallet_balance():
+    """Current credit balance for the mock wallet client (plan Section 9)."""
+    return {"balance": wallet.get_balance()}
 
 
 @app.post("/api/v2/revalidate/compare", response_model=RevalidationRun)
