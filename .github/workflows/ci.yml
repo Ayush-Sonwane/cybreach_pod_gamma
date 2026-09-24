@@ -27,3 +27,4 @@ jobs:
     - name: Run Tests with Pytest
       run: |
         pytest
+        cd revalidation_service && pytest
