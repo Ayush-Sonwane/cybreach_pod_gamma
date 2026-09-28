@@ -24,7 +24,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Run Tests with Pytest
+    - name: Run Tests
+      # Both services export a top-level package named `src`, so their suites
+      # cannot be collected in one pytest process. run_tests.py runs each from
+      # its own directory; the previous inline `pytest` + `cd ... && pytest`
+      # pair did the same thing but relied on the root pytest.ini's testpaths
+      # and gave no indication of why it was split this way.
       run: |
-        pytest
-        cd revalidation_service && pytest
+        python run_tests.py
