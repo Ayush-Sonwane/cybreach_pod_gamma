@@ -96,8 +96,12 @@ pytest
 
 ### 2. Re-Validation Service (`revalidation_service/`)
 
-Re-validates OCSF events previously stored by the normalizer, computes
-before/after deltas, and schedules automated re-validation passes.
+Re-validates OCSF events previously stored by the normalizer and computes
+before/after deltas.
+
+> There is no scheduler in this service. Re-validation runs when it is called;
+> nothing polls on a timer, so the `002_revalidation_schedules.sql` table is
+> unused DDL and is not read by any module.
 
 Key modules:
 
@@ -158,7 +162,9 @@ npm run dev        # http://localhost:5174
 `migration/` contains the shared SQL DDL:
 
 - `001_initial_schema.sql` — raw log ingestion and normalized event tables
-- `002_revalidation_schedules.sql` — automated re-validation schedule config
+- `002_revalidation_schedules.sql` — schedule configuration table. No module
+  reads it and no scheduler exists; it is retained as the intended schema for
+  re-validation scheduling, not as working functionality.
 
 `ocsf_normalizer/migration/` adds normalizer-specific tables (webhook
 connectors, custom OCSF class registry).
@@ -179,12 +185,21 @@ cross-pod reference.
 
 ## Testing all services
 
-Run from the repository root (root `pytest.ini` targets
-`ocsf_normalizer/tests` and `revalidation_service/tests`):
+Both suites in one command, which is what CI invokes:
 
 ```bash
-pytest
+python run_tests.py
 ```
 
-Each service also carries its own `pytest.ini` / suite and can be run
-independently.
+This is required rather than cosmetic. The two services each export a
+top-level package literally named `src`, so only one of them can be importable
+per interpreter — whichever lands on `sys.path` first shadows the other and the
+second suite fails with `ModuleNotFoundError: No module named 'src'`. Running
+each suite from its own directory is what makes both importable.
+
+A bare `pytest` at the repository root runs the **normalizer suite only**,
+because root `pytest.ini` sets `testpaths = ocsf_normalizer/tests`. That is a
+deliberate fallback for running one suite quickly, not the way to run the pod.
+
+Each service also carries its own `pytest.ini` and can be run independently
+from its own directory.
