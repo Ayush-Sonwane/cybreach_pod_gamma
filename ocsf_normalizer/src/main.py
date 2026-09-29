@@ -1,9 +1,9 @@
 import os
+import time
 from contextlib import asynccontextmanager
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any, Dict, List
 
-import uvicorn
 from fastapi import FastAPI, HTTPException, Header, Request
 from pydantic import BaseModel, Field
 
@@ -19,6 +19,12 @@ from src.models.custom_ocsf_class import (
     CustomOCSFClassRegistration,
     CustomOCSFClassResponse,
 )
+from src.monitoring.metrics import MetricsCollector
+
+
+def _elapsed_ms(start: float) -> float:
+    """Wall-clock milliseconds since ``start`` (monotonic clock)."""
+    return (time.perf_counter() - start) * 1000
 
 
 @asynccontextmanager
@@ -50,6 +56,7 @@ normalizer = BaseNormalizer()
 connector_repository = ConnectorRepository()
 custom_ocsf_repository = CustomOCSFClassRepository()
 dlq = DeadLetterQueue()
+metrics = MetricsCollector()
 
 class NormalizeRequest(BaseModel):
     log: Dict[str, Any]
@@ -79,26 +86,22 @@ def home():
     }
 
 
-@app.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "service": "ocsf-normalizer",
-    }
-
-
 @app.post("/api/v2/ocsf/normalize")
 def normalize(request: NormalizeRequest):
+    start = time.perf_counter()
     try:
         event = normalizer.process_log(request.log)
 
         if isinstance(event, dict):
+            metrics.record_single(_elapsed_ms(start), ok=True)
             return event
 
         if hasattr(event, "model_dump"):
+            metrics.record_single(_elapsed_ms(start), ok=True)
             return event.model_dump()
 
     except Exception as e:
+        metrics.record_single(_elapsed_ms(start), ok=False)
         raise HTTPException(
             status_code=400,
             detail=str(e)
@@ -118,12 +121,24 @@ def normalize_batch(request: NormalizeBatchRequest):
     ``results`` -- they are NOT HTTP errors. Only genuine server-side
     failures surface as 500.
     """
+    start = time.perf_counter()
     try:
-        return normalizer.process_batch(
+        result = normalizer.process_batch(
             request.logs,
             app.state.process_pool,
         )
+        metrics.record_batch(
+            size=result["total"],
+            duration_ms=_elapsed_ms(start),
+            succeeded=result["success_count"],
+            failed=result["failure_count"],
+        )
+        return result
     except Exception as e:
+        metrics.record_batch_failure(
+            size=len(request.logs),
+            duration_ms=_elapsed_ms(start),
+        )
         raise HTTPException(
             status_code=500,
             detail=str(e)
@@ -395,24 +410,15 @@ def create_webhook_connector(
     request: WebhookConnectorRequest,
     x_admin_token: str = Header(None, alias="X-Admin-Token"),
 ):
-    """Registers a new webhook connector with its own shared secret.
-
-    N-G10: this was an unauthenticated write. Because a caller could register
-    a connector with a secret of its own choosing, the per-connector HMAC on
-    ``/ingest`` was only as strong as this open endpoint. Administration is now
-    gated on a shared admin token (``X-Admin-Token``, env ``WEBHOOK_ADMIN_TOKEN``).
-    """
+    """Registers a new webhook connector with its own shared secret."""
     if not verify_admin_token(x_admin_token):
         raise HTTPException(
             status_code=401,
             detail={
                 "code": "UNAUTHORIZED",
-                "message": (
-                    "Connector administration requires a valid X-Admin-Token"
-                ),
+                "message": "Connector administration requires a valid X-Admin-Token",
             },
         )
-
     try:
         connector_repository.create_connector(
             connector_id=request.id,
@@ -444,6 +450,17 @@ def list_webhook_connectors():
         "connectors": connector_repository.list_connectors(),
     }
 
+
+@app.get("/api/v2/ocsf/normalize/metrics")
+def normalization_metrics():
+    """
+    Normalization performance monitoring.
+
+    Returns throughput (events/sec over a rolling window and lifetime) and
+    processing latency statistics (min/avg/max/p95) for single-event and
+    batch normalization requests.
+    """
+    return metrics.snapshot()
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8005)
