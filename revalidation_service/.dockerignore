@@ -1,0 +1,9 @@
+.git
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+*.db
+tests/
+node_modules/

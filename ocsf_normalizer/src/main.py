@@ -12,7 +12,7 @@ from src.validator import OCSFValidator
 from src.detector import SchemaDetector
 from src.dlq import DeadLetterQueue
 from src.webhook.repository import ConnectorRepository
-from src.webhook.security import WebhookSecurity
+from src.webhook.security import WebhookSecurity, verify_admin_token
 from src.webhook.validator import WebhookSchemaValidator
 from src.ocsf_registry.repository import CustomOCSFClassRepository
 from src.models.custom_ocsf_class import (
@@ -406,8 +406,19 @@ def webhook_health():
 
 
 @app.post("/api/v2/webhook/connectors")
-def create_webhook_connector(request: WebhookConnectorRequest):
+def create_webhook_connector(
+    request: WebhookConnectorRequest,
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+):
     """Registers a new webhook connector with its own shared secret."""
+    if not verify_admin_token(x_admin_token):
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "UNAUTHORIZED",
+                "message": "Connector administration requires a valid X-Admin-Token",
+            },
+        )
     try:
         connector_repository.create_connector(
             connector_id=request.id,
@@ -450,3 +461,6 @@ def normalization_metrics():
     batch normalization requests.
     """
     return metrics.snapshot()
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8005)

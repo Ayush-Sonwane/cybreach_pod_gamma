@@ -1,59 +1,81 @@
+# revalidation_service/tests/test_config.py
+"""Contract tests for the canonical message-bus names (plan Section 5, P5).
+
+Pod Gamma declares the topic names so all four pods read them from one place,
+and so the broker is injected rather than hardcoded to `localhost:9092`.
+"""
+import importlib
+import os
+import sys
+from pathlib import Path
+
 import pytest
 
-from src.core.config import (
-    ENV_ENABLED,
-    ENV_INTERVAL_SECONDS,
-    DEFAULT_INTERVAL_SECONDS,
-    SchedulerSettings,
-    load_scheduler_settings,
-)
+SERVICE_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(SERVICE_ROOT))
+
+from src.core import config as config_module  # noqa: E402
 
 
-class TestDefaults:
-    def test_missing_env_vars_use_documented_defaults(self):
-        settings = load_scheduler_settings({})
-        assert settings.enabled is False
-        assert settings.interval_seconds == DEFAULT_INTERVAL_SECONDS
+def _reload_with_env(monkeypatch, **env):
+    for key in (
+        "KAFKA_TOPIC_EVIDENCE",
+        "KAFKA_TOPIC_VERDICTS",
+        "KAFKA_TOPIC_GAP_CLOSED",
+        "KAFKA_TOPIC_REVALIDATION",
+        "KAFKA_TOPIC_CONNECTOR_HEALTH",
+        "KAFKA_BOOTSTRAP_SERVERS",
+    ):
+        monkeypatch.delenv(key, raising=False)
 
-    def test_settings_are_immutable(self):
-        settings = load_scheduler_settings({})
-        with pytest.raises(AttributeError):
-            settings.enabled = True
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
 
-
-class TestValidValues:
-    @pytest.mark.parametrize("raw", ["true", "TRUE", "True", "1", " true "])
-    def test_enabled_true_variants(self, raw):
-        assert load_scheduler_settings({ENV_ENABLED: raw}).enabled is True
-
-    @pytest.mark.parametrize("raw", ["false", "FALSE", "0", " false "])
-    def test_enabled_false_variants(self, raw):
-        assert load_scheduler_settings({ENV_ENABLED: raw}).enabled is False
-
-    def test_interval_parsed_as_integer(self):
-        settings = load_scheduler_settings({ENV_INTERVAL_SECONDS: "45"})
-        assert settings.interval_seconds == 45
-
-    def test_interval_whitespace_trimmed(self):
-        assert load_scheduler_settings({ENV_INTERVAL_SECONDS: "  60  "}).interval_seconds == 60
+    return importlib.reload(config_module)
 
 
-class TestFailFast:
-    @pytest.mark.parametrize("raw", ["yes", "on", "", "enabled"])
-    def test_invalid_boolean_fails_startup(self, raw):
-        with pytest.raises(ValueError, match=ENV_ENABLED):
-            load_scheduler_settings({ENV_ENABLED: raw})
+class TestCanonicalTopics:
+    def test_default_topics_match_the_plan(self, monkeypatch):
+        config = _reload_with_env(monkeypatch)
 
-    @pytest.mark.parametrize("raw", ["abc", "", "3.5"])
-    def test_invalid_interval_fails_startup(self, raw):
-        with pytest.raises(ValueError, match=ENV_INTERVAL_SECONDS):
-            load_scheduler_settings({ENV_INTERVAL_SECONDS: raw})
+        assert config.TOPIC_EVIDENCE == "cybreach.evidence.v1"
+        assert config.TOPIC_VERDICTS == "cybreach.verdicts.v2"
+        assert config.TOPIC_GAP_CLOSED == "cybreach.gap_closed.v2"
+        assert config.TOPIC_REVALIDATION == "cybreach.revalidation.v1"
+        assert config.TOPIC_CONNECTOR_HEALTH == "cybreach.connector.health.v1"
 
-    @pytest.mark.parametrize("raw", ["0", "-5"])
-    def test_non_positive_interval_rejected(self, raw):
-        with pytest.raises(ValueError, match=ENV_INTERVAL_SECONDS):
-            load_scheduler_settings({ENV_INTERVAL_SECONDS: raw})
+    def test_all_five_plan_topics_are_declared(self, monkeypatch):
+        config = _reload_with_env(monkeypatch)
 
-    def test_invalid_boolean_message_lists_accepted_values(self):
-        with pytest.raises(ValueError, match="true/false/1/0"):
-            load_scheduler_settings({ENV_ENABLED: "maybe"})
+        assert len(config.PLAN_TOPICS) == 5
+        assert len(set(config.PLAN_TOPICS)) == 5
+
+    def test_no_topic_uses_the_retired_legacy_name(self, monkeypatch):
+        config = _reload_with_env(monkeypatch)
+
+        for topic in config.PLAN_TOPICS:
+            assert "verdict-events" not in topic
+            assert topic.startswith("cybreach.")
+
+    def test_topics_are_overridable(self, monkeypatch):
+        config = _reload_with_env(
+            monkeypatch, KAFKA_TOPIC_VERDICTS="custom.verdicts.v2"
+        )
+
+        assert config.TOPIC_VERDICTS == "custom.verdicts.v2"
+
+
+class TestInjectedBroker:
+    def test_broker_is_not_hardcoded(self, monkeypatch):
+        config = _reload_with_env(monkeypatch)
+
+        # No default: a hardcoded `localhost:9092` silently points at whatever
+        # broker happens to be on the developer's own machine.
+        assert config.get_settings().kafka_bootstrap_servers == ""
+
+    def test_broker_comes_from_the_environment(self, monkeypatch):
+        config = _reload_with_env(
+            monkeypatch, KAFKA_BOOTSTRAP_SERVERS="broker:9092"
+        )
+
+        assert config.get_settings().kafka_bootstrap_servers == "broker:9092"

@@ -1,513 +1,148 @@
-from contextlib import asynccontextmanager
-from typing import Dict, Any
-from uuid import uuid4
+# revalidation_service/src/main.py
+"""OCSF Re-Validation Service - FastAPI application (Pod Gamma, Task 3).
 
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse
+Exposes the re-validation engine built for Task 3:
+  - delta tracking (field-level before/after diff)
+  - rule/version comparison
+  - run history with before-and-after verdicts and confidence score changes
+  - rules responsible for improvements
+  - improvement metrics
 
-from src.model import (
-    RevalidateRequest,
-    RevalidateResponse,
-    DeltaResponse,
-    DeltaChange,
-    SchedulerRunEntry,
-    SchedulerSettingsModel,
-    SchedulerStatusResponse,
+Note: full API hardening (error handling, idempotency) is scope of Task 4.
+"""
+import uuid
+from typing import Any, Dict, List, Optional
+
+import uvicorn
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
+
+from src.core.config import get_settings
+from src.core.contracts import (
+    EventSnapshot,
+    ImprovementReport,
+    RevalidationRun,
+    RuleVersionComparison,
 )
-from src.repository import RevalidationRepository
-from src.service.delta_engine import DeltaEngine
-from src.core.config import load_scheduler_settings, SchedulerSettings
-from src.service.scheduler import (
-    RevalidationRunner,
-    RevalidationScheduler,
-    SchedulerBusyError,
+from src.service.delta_engine import (
+    build_report,
+    compare_rule_versions,
+    evaluate,
 )
-from src.scheduling.api import router as schedule_router
+from src.service.history_store import RevalidationHistoryStore
+from src.service.scoring import build_snapshot
+from src.wallet import wallet
 
-
-@asynccontextmanager
-async def lifespan(application: FastAPI):
-    # Contract clause 7: enabled=false gates automatic scheduling only.
-    if scheduler.settings.enabled:
-        scheduler.start()
-    try:
-        yield
-    finally:
-        scheduler.stop()
-
+settings = get_settings()
+store = RevalidationHistoryStore(settings.db_path)
 
 app = FastAPI(
-    title="OCSF Re-Validation Service",
-    version="2.0.0",
-    lifespan=lifespan,
+    title=settings.service_name,
+    version=settings.service_version,
 )
 
-app.include_router(schedule_router)
 
-repository = RevalidationRepository()
-
-
-def validate_ocsf_event(event: Dict[str, Any]):
-    """
-    Basic OCSF validation for the re-validation service.
-    """
-
-    errors = []
-
-    mandatory_fields = [
-        "class_uid",
-        "category_uid",
-        "time",
-    ]
-
-    for field in mandatory_fields:
-        if field not in event or event[field] is None:
-            errors.append(
-                f"Missing mandatory OCSF field: '{field}'"
-            )
-
-    event_time = event.get("time")
-
-    if event_time is not None:
-        if not isinstance(event_time, (int, float)):
-            errors.append(
-                "Invalid 'time' type: "
-                "Expected numeric timestamp, "
-                f"got {type(event_time).__name__}"
-            )
-
-    return len(errors) == 0, errors
+class RevalidateRequest(BaseModel):
+    event_id: str = Field(min_length=1)
+    vendor: str = Field(min_length=1)
+    normalized: Dict[str, Any]
 
 
-# -------------------------------------------------
-# Scheduler engine (#4) — see SCHEDULER_CONTRACT.md
-# -------------------------------------------------
+class CompareRequest(RevalidateRequest):
+    before: Dict[str, Any]
 
-scheduler_settings = load_scheduler_settings()
 
-revalidation_runner = RevalidationRunner(
-    repository=repository,
-    validator=validate_ocsf_event,
-)
-
-scheduler = RevalidationScheduler(
-    settings=scheduler_settings,
-    runner=revalidation_runner,
-    repository=repository,
-)
+def _baseline_snapshot(event_id: str, vendor: str) -> EventSnapshot:
+    """Synthetic empty-baseline snapshot used when an event has no history yet."""
+    snapshot = build_snapshot(event_id, vendor, {})
+    snapshot.rules_used = []
+    return snapshot
 
 
 @app.get("/")
 def home():
-    return {
-        "message": "OCSF Re-Validation Service is running"
-    }
+    return {"message": f"{settings.service_name} is running"}
 
 
 @app.get("/health")
 def health():
-    return {
-        "status": "healthy"
-    }
+    return {"status": "ok", "service": "revalidation-service"}
 
 
-@app.post(
-    "/api/v2/revalidate",
-    response_model=RevalidateResponse,
-)
-def revalidate(
-    request: RevalidateRequest,
-    idempotency_key: str = Header(
-        ...,
-        alias="Idempotency-Key",
-    ),
+@app.post("/api/v2/revalidate", response_model=RevalidationRun)
+def revalidate(request: RevalidateRequest):
+    """Validate/normalizer result vs the event's last stored run.
+
+    First submission for an event_id compares against an empty baseline,
+    so even the initial result produces a measurable improvement delta.
+
+    Re-validation debits 1 credit per run (plan Section 9); the credit is
+    refunded when the run verdict is UNCHANGED (no meaningful delta).
+    """
+    if not request.normalized:
+        raise HTTPException(status_code=400, detail="'normalized' payload must not be empty")
+
+    if not wallet.debit(1):
+        raise HTTPException(status_code=402, detail="insufficient credits")
+
+    after = build_snapshot(request.event_id, request.vendor, request.normalized)
+    before = store.latest_after(request.event_id) or _baseline_snapshot(
+        request.event_id, request.vendor
+    )
+
+    run = evaluate(before, after, run_id=uuid.uuid4().hex)
+    store.save_run(run)
+
+    if run.verdict == "UNCHANGED":
+        wallet.refund(1)
+
+    return run
+
+
+@app.get("/api/v2/revalidate/wallet")
+def wallet_balance():
+    """Current credit balance for the mock wallet client (plan Section 9)."""
+    return {"balance": wallet.get_balance()}
+
+
+@app.post("/api/v2/revalidate/compare", response_model=RevalidationRun)
+def revalidate_compare(request: CompareRequest):
+    """Stateless comparison of two explicit before/after normalized payloads."""
+    before = build_snapshot(request.event_id, request.vendor, request.before)
+    after = build_snapshot(request.event_id, request.vendor, request.normalized)
+    return evaluate(before, after, run_id=uuid.uuid4().hex)
+
+
+@app.get("/api/v2/revalidate/runs", response_model=List[RevalidationRun])
+def list_runs(
+    limit: int = Query(50, ge=1, le=1000),
+    event_id: Optional[str] = None,
 ):
-    """
-    Trigger an OCSF re-validation run.
+    return store.list_runs(limit=limit, event_id=event_id)
 
-    Idempotency guarantees:
-    - Same key + same request → return existing result.
-    - Same key + different request → HTTP 409.
-    """
 
-    # -------------------------------------------------
-    # 1. Validate Idempotency-Key
-    # -------------------------------------------------
+@app.get("/api/v2/revalidate/runs/{run_id}", response_model=RevalidationRun)
+def get_run(run_id: str):
+    run = store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
+    return run
 
-    if not idempotency_key.strip():
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "INVALID_IDEMPOTENCY_KEY",
-                "message": "Idempotency-Key cannot be empty",
-            },
-        )
 
-    if len(idempotency_key) > 255:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "INVALID_IDEMPOTENCY_KEY",
-                "message": (
-                    "Idempotency-Key must not exceed "
-                    "255 characters"
-                ),
-            },
-        )
+@app.get("/api/v2/revalidate/metrics", response_model=ImprovementReport)
+def improvement_metrics():
+    """Improvement metrics across all stored re-validation runs."""
+    return build_report(store.all_runs())
 
-    try:
 
-        # -------------------------------------------------
-        # 2. Calculate request hash
-        # -------------------------------------------------
+@app.get("/api/v2/revalidate/rules/compare", response_model=List[RuleVersionComparison])
+def rule_version_comparison(
+    v1: str = Query(..., description="before schema version, e.g. 1.0.0"),
+    v2: str = Query(..., description="after schema version, e.g. 1.1.0"),
+):
+    """History-based rule/version comparison: rule sets recorded at v1 vs v2."""
+    return compare_rule_versions(store.all_runs(), v1, v2)
 
-        request_hash = repository.build_request_hash(
-            event_id=request.event_id,
-            original_event=request.original_event,
-            updated_event=request.event,
-        )
 
-        # -------------------------------------------------
-        # 3. Check idempotency
-        # -------------------------------------------------
-
-        existing = repository.get_by_idempotency_key(
-            idempotency_key
-        )
-
-        if existing:
-
-            # Same key + same request
-            if existing["request_hash"] == request_hash:
-
-                return RevalidateResponse(
-                    re_run_id=existing["re_run_id"],
-                    event_id=existing["event_id"],
-                    status="already_processed",
-                    valid=existing["valid"],
-                    errors=existing["errors"],
-                    idempotent=True,
-                )
-
-            # Same key + different request
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "IDEMPOTENCY_KEY_CONFLICT",
-                    "message": (
-                        "The Idempotency-Key has already "
-                        "been used for a different request"
-                    ),
-                },
-            )
-
-        # -------------------------------------------------
-        # 4. Validate event
-        # -------------------------------------------------
-
-        valid, errors = validate_ocsf_event(
-            request.event
-        )
-
-        # -------------------------------------------------
-        # 5. Generate re-run ID
-        # -------------------------------------------------
-
-        re_run_id = f"rerun-{uuid4().hex}"
-
-        # -------------------------------------------------
-        # 6. Save result
-        # -------------------------------------------------
-
-        try:
-
-            repository.save(
-                re_run_id=re_run_id,
-                event_id=request.event_id,
-                idempotency_key=idempotency_key,
-                original_event=request.original_event,
-                updated_event=request.event,
-                valid=valid,
-                errors=errors,
-            )
-
-        except Exception as save_error:
-
-            # A concurrent request may have inserted
-            # the same Idempotency-Key between our
-            # lookup and INSERT.
-
-            existing = repository.get_by_idempotency_key(
-                idempotency_key
-            )
-
-            if existing:
-
-                if existing["request_hash"] == request_hash:
-
-                    return RevalidateResponse(
-                        re_run_id=existing["re_run_id"],
-                        event_id=existing["event_id"],
-                        status="already_processed",
-                        valid=existing["valid"],
-                        errors=existing["errors"],
-                        idempotent=True,
-                    )
-
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "IDEMPOTENCY_KEY_CONFLICT",
-                        "message": (
-                            "The Idempotency-Key has already "
-                            "been used for a different request"
-                        ),
-                    },
-                )
-
-            raise save_error
-
-        # -------------------------------------------------
-        # 7. Return response
-        # -------------------------------------------------
-
-        return RevalidateResponse(
-            re_run_id=re_run_id,
-            event_id=request.event_id,
-            status="completed",
-            valid=valid,
-            errors=errors,
-            idempotent=False,
-        )
-
-    except HTTPException:
-        raise
-
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "REVALIDATION_FAILED",
-                "message": (
-                    "Unable to complete re-validation"
-                ),
-            },
-        )
-
-
-@app.get(
-    "/api/v2/revalidate/{re_run_id}/delta",
-    response_model=DeltaResponse,
-)
-def get_delta(re_run_id: str):
-
-    # -------------------------------------------------
-    # 1. Validate re_run_id
-    # -------------------------------------------------
-
-    if not re_run_id.strip():
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "INVALID_RE_RUN_ID",
-                "message": "re_run_id cannot be empty",
-            },
-        )
-
-    try:
-
-        # -------------------------------------------------
-        # 2. Find re-validation run
-        # -------------------------------------------------
-
-        result = repository.get_by_id(
-            re_run_id
-        )
-
-        if result is None:
-
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "code": "RE_RUN_NOT_FOUND",
-                    "message": (
-                        f"Re-validation run "
-                        f"'{re_run_id}' was not found"
-                    ),
-                },
-            )
-
-        # -------------------------------------------------
-        # 3. Calculate delta
-        # -------------------------------------------------
-
-        changes = DeltaEngine.calculate(
-            result["original_event"],
-            result["updated_event"],
-        )
-
-        # -------------------------------------------------
-        # 4. Convert to response model
-        # -------------------------------------------------
-
-        delta_changes = [
-            DeltaChange(**change)
-            for change in changes
-        ]
-
-        # -------------------------------------------------
-        # 5. Return response
-        # -------------------------------------------------
-
-        return DeltaResponse(
-            re_run_id=result["re_run_id"],
-            event_id=result["event_id"],
-            changes=delta_changes,
-        )
-
-    except HTTPException:
-        raise
-
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "DELTA_CALCULATION_FAILED",
-                "message": (
-                    "Unable to calculate re-validation delta"
-                ),
-            },
-        )
-
-
-@app.get(
-    "/api/v2/revalidate/scheduler/status",
-    response_model=SchedulerStatusResponse,
-)
-def get_scheduler_status():
-    """
-    Current scheduler configuration, lifecycle state and recent run history.
-    """
-
-    try:
-
-        recent = [
-            SchedulerRunEntry(**entry)
-            for entry in repository.list_scheduler_history(limit=10)
-        ]
-
-        counters = scheduler.counters()
-
-        return SchedulerStatusResponse(
-            settings=SchedulerSettingsModel(
-                enabled=scheduler.settings.enabled,
-                interval_seconds=scheduler.settings.interval_seconds,
-            ),
-            scheduler_running=scheduler.is_running(),
-            runs_started=counters["runs_started"],
-            skipped_ticks=counters["skipped_ticks"],
-            last_run=next(
-                (
-                    entry
-                    for entry in recent
-                    if entry.trigger != "skipped_tick"
-                ),
-                None,
-            ),
-            recent_runs=recent,
-        )
-
-    except HTTPException:
-        raise
-
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "SCHEDULER_STATUS_FAILED",
-                "message": "Unable to read scheduler status",
-            },
-        )
-
-
-@app.post(
-    "/api/v2/revalidate/scheduler/run-now",
-    response_model=SchedulerRunEntry,
-)
-def scheduler_run_now():
-    """
-    Trigger exactly one re-validation pass through the same single
-    execution path used by scheduled ticks (contract clause 1).
-
-    Returns 409 if a run is already active. A runner failure is NOT a
-    transport error: it is returned as HTTP 200 with status 'failed'
-    plus the recorded error (failures are data — clause 5).
-    """
-
-    try:
-        result = scheduler.run_once(trigger="manual")
-    except SchedulerBusyError as busy_error:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "SCHEDULER_RUN_IN_PROGRESS",
-                "message": str(busy_error),
-            },
-        )
-
-    except HTTPException:
-        raise
-
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "REVALIDATION_SCHEDULER_FAILED",
-                "message": "Unable to trigger re-validation run",
-            },
-        )
-
-    return SchedulerRunEntry(**result)
-
-
-@app.put(
-    "/api/v2/revalidate/scheduler/config",
-    response_model=SchedulerSettingsModel,
-)
-def update_scheduler_config(request: SchedulerSettingsModel):
-    """Update scheduler configuration at runtime (contract: #5 seam).
-
-    Must operate through SchedulerSettings; must not mutate engine
-    internals directly. Interval change takes effect on the next tick;
-    enable/disable transitions call the lifecycle methods.
-    """
-
-    if request.interval_seconds < 1:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "INVALID_SCHEDULER_CONFIG",
-                "message": (
-                    "interval_seconds must be >= 1"
-                ),
-            },
-        )
-
-    new_settings = SchedulerSettings(
-        enabled=request.enabled,
-        interval_seconds=request.interval_seconds,
-    )
-
-    previously_enabled = scheduler.settings.enabled
-
-    scheduler._settings = new_settings
-
-    if request.enabled and not previously_enabled:
-        scheduler.start()
-    elif not request.enabled and previously_enabled:
-        scheduler.stop()
-
-    return SchedulerSettingsModel(
-        enabled=scheduler.settings.enabled,
-        interval_seconds=scheduler.settings.interval_seconds,
-    )
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8006)
