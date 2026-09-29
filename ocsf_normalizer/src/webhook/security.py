@@ -1,6 +1,7 @@
 # src/webhook/security.py
 import hashlib
 import hmac
+import os
 import secrets
 from typing import Any, Dict, Optional, Tuple
 
@@ -8,6 +9,30 @@ from typing import Any, Dict, Optional, Tuple
 CONNECTOR_ID_HEADER = "X-Connector-Id"
 SECRET_HEADER = "X-Webhook-Secret"
 SIGNATURE_HEADER = "X-Webhook-Signature"
+
+# Header and env var for connector *administration* (N-G10).
+ADMIN_TOKEN_HEADER = "X-Admin-Token"
+ADMIN_TOKEN_ENV = "WEBHOOK_ADMIN_TOKEN"
+
+
+def verify_admin_token(provided: Optional[str]) -> bool:
+    """Authorise a privileged connector-administration call.
+
+    N-G10: ``POST /api/v2/webhook/connectors`` lets a caller mint a connector
+    with a secret of its choosing, which is an unauthenticated write on a pod
+    that guards every other route -- the per-connector HMAC on ``ingest`` is
+    only as strong as an open registration endpoint. Administration is
+    therefore gated on a shared admin token, env-only with no fallback so no
+    credential is committed, and compared in constant time.
+
+    Fails closed: with no token configured, administration is unavailable.
+    """
+
+    expected = os.getenv(ADMIN_TOKEN_ENV, "")
+    if not expected:
+        return False
+
+    return bool(provided) and secrets.compare_digest(provided.strip(), expected)
 
 
 class WebhookSecurity:

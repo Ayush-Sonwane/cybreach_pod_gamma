@@ -484,6 +484,10 @@ def client(tmp_path, monkeypatch):
     repo = ConnectorRepository(database_path=str(tmp_path / "api_connectors.db"))
     monkeypatch.setattr("src.main.connector_repository", repo)
     monkeypatch.setattr(dlq, "queue", [])
+    # N-G10: connector administration is gated on a shared admin token. The
+    # token is env-only with no committed default, so it is injected here for
+    # the duration of the test.
+    monkeypatch.setenv("WEBHOOK_ADMIN_TOKEN", "test-admin-token")
     repo.create_connector("c1", "Demo SIEM", "s3cr3t")
     return TestClient(app)
 
@@ -592,19 +596,59 @@ def test_health_endpoint_returns_counters(client):
 
 @skip_without_fastapi
 def test_connector_management_endpoints(client):
+    admin = {"X-Admin-Token": "test-admin-token"}
     create = client.post("/api/v2/webhook/connectors", json={
         "id": "c2", "name": "Second SIEM", "secret": "abc123", "hmac_enabled": True,
-    })
+    }, headers=admin)
     assert create.status_code == 200
     duplicate = client.post("/api/v2/webhook/connectors", json={
         "id": "c2", "name": "Duplicate", "secret": "x",
-    })
+    }, headers=admin)
     assert duplicate.status_code == 409
     listed = client.get("/api/v2/webhook/connectors")
     assert listed.status_code == 200
     ids = [c["id"] for c in listed.json()["connectors"]]
     assert "c2" in ids
     assert all("secret" not in c for c in listed.json()["connectors"])
+
+
+@skip_without_fastapi
+def test_connector_registration_requires_admin_token(client):
+    """N-G10: the open registration endpoint was the hole under the per-connector
+    HMAC guard, so registering a connector now needs the admin token."""
+    body = {"id": "c3", "name": "Unauthorised SIEM", "secret": "abc123"}
+
+    anonymous = client.post("/api/v2/webhook/connectors", json=body)
+    assert anonymous.status_code == 401
+    assert anonymous.json()["detail"]["code"] == "UNAUTHORIZED"
+
+    wrong = client.post(
+        "/api/v2/webhook/connectors",
+        json=body,
+        headers={"X-Admin-Token": "not-the-token"},
+    )
+    assert wrong.status_code == 401
+
+    # ...and the rejected connector was not created.
+    listed = client.get("/api/v2/webhook/connectors")
+    assert "c3" not in [c["id"] for c in listed.json()["connectors"]]
+
+
+@skip_without_fastapi
+def test_connector_registration_fails_closed_without_configured_token(
+    client, monkeypatch
+):
+    """With no admin token configured, administration is unavailable rather than
+    open -- an unset env var must not silently disable the guard."""
+    monkeypatch.delenv("WEBHOOK_ADMIN_TOKEN", raising=False)
+
+    response = client.post(
+        "/api/v2/webhook/connectors",
+        json={"id": "c4", "name": "SIEM", "secret": "x"},
+        headers={"X-Admin-Token": "anything"},
+    )
+
+    assert response.status_code == 401
 
 
 @skip_without_fastapi

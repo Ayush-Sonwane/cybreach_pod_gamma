@@ -79,13 +79,19 @@ normalization, default: CPU count).
 | GET | `/api/v2/ocsf/classes/{class_id}` | Get a custom class by ID |
 | POST | `/api/v2/webhook/ingest` | Authenticated generic webhook ingestion |
 | GET | `/api/v2/webhook/health` | Per-connector delivery counters |
-| POST | `/api/v2/webhook/connectors` | Register a webhook connector |
+| POST | `/api/v2/webhook/connectors` | Register a webhook connector (requires `X-Admin-Token`) |
 | GET | `/api/v2/webhook/connectors` | List connectors (secrets never returned) |
 
 Webhook requests authenticate with an `X-Connector-Id` plus either
 `X-Webhook-Secret` (shared secret) or `X-Webhook-Signature` (HMAC-SHA256 of the
 raw body). Failed events are pushed to the DLQ and reflected in the health
 counters.
+
+Connector **administration** (`POST /api/v2/webhook/connectors`) additionally
+requires an `X-Admin-Token` header matching the `WEBHOOK_ADMIN_TOKEN`
+environment variable. The token is read from the environment with no committed
+default and no fallback: with it unset, connector registration returns `401`,
+so an unconfigured deployment is closed rather than open.
 
 #### Tests
 
