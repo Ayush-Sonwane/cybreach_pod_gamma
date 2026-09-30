@@ -1,21 +1,15 @@
 -- Migration: 002_webhook_connector.sql
--- Description: Adds generic webhook connector config + health monitoring tables
+-- Description: Local webhook health tracking only. The canonical connector
+-- registry is owned by Pod Alpha and lives in the Alpha service's `connectors`
+-- table. Gamma keeps only local webhook delivery health metrics here.
 
 BEGIN;
 
--- 1. Per-connector webhook configuration (shared secret / HMAC)
-CREATE TABLE IF NOT EXISTS connectors (
-    id TEXT PRIMARY KEY,               -- unique connector identifier (sent via X-Connector-Id)
-    name TEXT NOT NULL,                -- human-readable connector name
-    secret TEXT NOT NULL,              -- per-connector shared secret (HMAC key / secret header)
-    hmac_enabled BOOLEAN DEFAULT FALSE,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. Persisted webhook delivery health counters (one row per connector)
+-- 1. Persisted webhook delivery health counters (one row per connector)
+-- This table is local observability state only; it is not the canonical
+-- connector registry. The authoritative registry is Alpha's `connectors` table.
 CREATE TABLE IF NOT EXISTS webhook_health (
-    connector_id TEXT PRIMARY KEY REFERENCES connectors(id) ON DELETE CASCADE,
+    connector_id TEXT PRIMARY KEY,
     delivered INTEGER NOT NULL DEFAULT 0,
     valid_count INTEGER NOT NULL DEFAULT 0,
     invalid_count INTEGER NOT NULL DEFAULT 0,
