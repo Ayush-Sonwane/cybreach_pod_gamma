@@ -3,4 +3,7 @@ pydantic == 2.13.4
 uvicorn == 0.52.2
 pytest == 9.1.1
 httpx >= 0.27.0
-
+# B11: the operator API routes verify the module's shared HS256 JWT, the same
+# dependency Alpha, Beta and Delta declare. Pinned to the same version so the
+# pod cannot fail on a jose major the other pods do not run.
+python-jose == 3.5.0

@@ -15,6 +15,20 @@ class ConnectorRepository:
     Uses the existing SQLite persistence pattern from the revalidation
     service (raw sqlite3, no ORM). No separate store is introduced: connector
     config and health metrics live in the same connectors database.
+
+    B11: connectors are tenant-scoped, but the two callers of this repository
+    have different identities and the difference matters:
+
+    * `/api/v2/webhook/ingest` is a machine-to-machine path. The sender is a
+      SIEM that was issued a per-connector shared secret, and it does not hold a
+      module JWT. There, the connector's own secret *is* the credential, so
+      `get_connector` resolves by id alone -- scoping it to a tenant would
+      require the sender to present a tenant it was never given.
+    * The operator routes (`/api/v2/webhook/connectors`, `/webhook/health`) run
+      with a verified JWT, so every one of their reads and writes filters on the
+      token's `tenant_id`. Without that, `GET /api/v2/webhook/connectors` listed
+      every tenant's connectors and `GET /api/v2/webhook/health` exposed their
+      delivery counters.
     """
 
     def __init__(self, database_path: str = "connectors.db"):
@@ -36,7 +50,8 @@ class ConnectorRepository:
                     secret TEXT NOT NULL,
                     hmac_enabled INTEGER NOT NULL DEFAULT 0,
                     is_active INTEGER NOT NULL DEFAULT 1,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
@@ -57,6 +72,21 @@ class ConnectorRepository:
                 )
                 """
             )
+            # B11: a database created before tenant scoping has no column, and
+            # CREATE TABLE IF NOT EXISTS will not add one. Pre-existing rows
+            # keep the '' default and stay invisible to tenant-scoped queries
+            # rather than being surfaced to whichever tenant lists first.
+            columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(connectors)").fetchall()
+            }
+            if "tenant_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE connectors ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ''"
+                )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_connectors_tenant ON connectors(tenant_id)"
+            )
 
     # ---------------------------------------------------------------
     # Connector configuration
@@ -69,14 +99,15 @@ class ConnectorRepository:
         secret: str,
         hmac_enabled: bool = False,
         is_active: bool = True,
+        tenant_id: str = "",
     ) -> None:
         with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO connectors (
-                    id, name, secret, hmac_enabled, is_active, created_at
+                    id, name, secret, hmac_enabled, is_active, created_at, tenant_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     connector_id,
@@ -85,10 +116,17 @@ class ConnectorRepository:
                     int(hmac_enabled),
                     int(is_active),
                     _utc_now(),
+                    tenant_id,
                 ),
             )
 
     def get_connector(self, connector_id: str) -> Optional[Dict[str, Any]]:
+        """Resolve a connector for the webhook ingest path.
+
+        Deliberately NOT tenant-filtered: that path's credential is the
+        connector's own shared secret (see the class docstring), and the sender
+        has no tenant claim to filter on.
+        """
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -109,10 +147,14 @@ class ConnectorRepository:
             "created_at": row[5],
         }
 
-    def list_connectors(self, include_secret: bool = False) -> List[Dict[str, Any]]:
+    def list_connectors(
+        self, tenant_id: str = "", include_secret: bool = False
+    ) -> List[Dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT id, name, secret, hmac_enabled, is_active, created_at FROM connectors"
+                "SELECT id, name, secret, hmac_enabled, is_active, created_at "
+                "FROM connectors WHERE tenant_id = ? ORDER BY id",
+                (tenant_id,),
             ).fetchall()
         connectors = []
         for row in rows:
@@ -128,10 +170,17 @@ class ConnectorRepository:
             connectors.append(connector)
         return connectors
 
-    def delete_connector(self, connector_id: str) -> None:
+    def delete_connector(self, connector_id: str, tenant_id: str = "") -> None:
         with self._connect() as connection:
-            connection.execute("DELETE FROM webhook_health WHERE connector_id = ?", (connector_id,))
-            connection.execute("DELETE FROM connectors WHERE id = ?", (connector_id,))
+            connection.execute(
+                "DELETE FROM webhook_health WHERE connector_id = ? AND connector_id IN "
+                "(SELECT id FROM connectors WHERE id = ? AND tenant_id = ?)",
+                (connector_id, connector_id, tenant_id),
+            )
+            connection.execute(
+                "DELETE FROM connectors WHERE id = ? AND tenant_id = ?",
+                (connector_id, tenant_id),
+            )
 
     # ---------------------------------------------------------------
     # Health monitoring
@@ -191,17 +240,25 @@ class ConnectorRepository:
                 ),
             )
 
-    def get_health(self) -> List[Dict[str, Any]]:
+    def get_health(self, tenant_id: str = "") -> List[Dict[str, Any]]:
+        """Delivery counters for this tenant's connectors.
+
+        Scoped by joining `connectors` rather than by filtering `connector_id`
+        alone, so a tenant cannot read another tenant's delivery counters.
+        """
         with self._connect() as connection:
             rows = connection.execute(
                 """
                 SELECT
-                    connector_id, delivered, valid_count, invalid_count,
-                    auth_failures, dlq_count, total_latency_ms,
-                    last_seen, last_status, last_error
-                FROM webhook_health
-                ORDER BY connector_id
-                """
+                    h.connector_id, h.delivered, h.valid_count, h.invalid_count,
+                    h.auth_failures, h.dlq_count, h.total_latency_ms,
+                    h.last_seen, h.last_status, h.last_error
+                FROM webhook_health h
+                JOIN connectors c ON c.id = h.connector_id
+                WHERE c.tenant_id = ?
+                ORDER BY h.connector_id
+                """,
+                (tenant_id,),
             ).fetchall()
         health = []
         for row in rows:
@@ -220,18 +277,21 @@ class ConnectorRepository:
             })
         return health
 
-    def get_health_by_connector(self, connector_id: str) -> Optional[Dict[str, Any]]:
+    def get_health_by_connector(
+        self, connector_id: str, tenant_id: str = ""
+    ) -> Optional[Dict[str, Any]]:
         with self._connect() as connection:
             row = connection.execute(
                 """
                 SELECT
-                    connector_id, delivered, valid_count, invalid_count,
-                    auth_failures, dlq_count, total_latency_ms,
-                    last_seen, last_status, last_error
-                FROM webhook_health
-                WHERE connector_id = ?
+                    h.connector_id, h.delivered, h.valid_count, h.invalid_count,
+                    h.auth_failures, h.dlq_count, h.total_latency_ms,
+                    h.last_seen, h.last_status, h.last_error
+                FROM webhook_health h
+                JOIN connectors c ON c.id = h.connector_id
+                WHERE h.connector_id = ? AND c.tenant_id = ?
                 """,
-                (connector_id,),
+                (connector_id, tenant_id),
             ).fetchone()
         if row is None:
             return None

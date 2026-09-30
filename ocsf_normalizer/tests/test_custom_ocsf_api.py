@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 import src.main
 from src.main import app
 from src.ocsf_registry.repository import CustomOCSFClassRepository
+from tests.auth_helpers import auth_headers
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -23,6 +24,9 @@ def isolated_custom_ocsf_db(tmp_path_factory):
 
 
 client = TestClient(app)
+# B11: the class registry routes are JWT-gated. The unauthenticated-rejection
+# test builds its own client without these headers.
+client.headers.update(auth_headers())
 
 
 def test_register_custom_ocsf_class():

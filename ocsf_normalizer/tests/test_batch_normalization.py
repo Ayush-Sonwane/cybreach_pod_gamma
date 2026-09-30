@@ -134,6 +134,7 @@ try:
     from fastapi.testclient import TestClient  # noqa: E402
 
     from src.main import app  # noqa: E402
+    from tests.auth_helpers import authed_client
 
     HAS_FASTAPI = True
 except Exception:  # pragma: no cover - depends on local env
@@ -147,14 +148,14 @@ skip_without_fastapi = pytest.mark.skipif(
 @skip_without_fastapi
 def test_batch_endpoint_rejects_oversized_payload():      # batches over the 2000-event cap are rejected with 422
     oversized = [{"some_key": i} for i in range(2001)]
-    with TestClient(app) as client:
+    with authed_client(app) as client:
         response = client.post("/api/v2/ocsf/normalize/batch", json={"logs": oversized})
     assert response.status_code == 422
 
 
 @skip_without_fastapi
 def test_batch_endpoint_processes_batch_with_lifespan_pool():
-    with TestClient(app) as client:
+    with authed_client(app) as client:
         response = client.post(
             "/api/v2/ocsf/normalize/batch",
             json={"logs": VALID_INVALID_MIX},
@@ -170,7 +171,7 @@ def test_batch_endpoint_processes_batch_with_lifespan_pool():
 
 @skip_without_fastapi
 def test_shared_pool_reused_across_requests():
-    with TestClient(app) as client:
+    with authed_client(app) as client:
         pool_before = app.state.process_pool
 
         first = client.post(

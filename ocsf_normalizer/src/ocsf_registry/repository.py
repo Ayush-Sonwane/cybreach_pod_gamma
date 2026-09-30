@@ -12,6 +12,13 @@ class CustomOCSFClassRepository:
     """
     Persists organization-specific custom OCSF class schemas
     in the shared SQLite database.
+
+    B11: rows are tenant-scoped. `organization` alone is not a security
+    boundary -- it is a caller-supplied string on the request body, so one
+    tenant could register a class under another tenant's organization name and
+    then read it back through `GET /api/v2/ocsf/classes`. `tenant_id` comes
+    from the verified JWT instead, is stored separately, and every method
+    filters on it.
     """
 
     def __init__(self, database_path: str = "connectors.db"):
@@ -37,9 +44,29 @@ class CustomOCSFClassRepository:
                     schema TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL DEFAULT '',
                     UNIQUE (organization, class_uid)
                 )
                 """
+            )
+            # A database created before B11 has no tenant_id column, and
+            # `CREATE TABLE IF NOT EXISTS` will not add one. Pre-existing rows
+            # cannot be attributed to a tenant, so they keep the '' default and
+            # stay invisible to every tenant-scoped query.
+            columns = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info(custom_ocsf_classes)"
+                ).fetchall()
+            }
+            if "tenant_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE custom_ocsf_classes "
+                    "ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ''"
+                )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_custom_classes_tenant "
+                "ON custom_ocsf_classes(tenant_id)"
             )
 
     def create_class(
@@ -51,6 +78,7 @@ class CustomOCSFClassRepository:
         category_uid: int,
         version: str,
         schema: Dict[str, Any],
+        tenant_id: str = "",
     ) -> Dict[str, Any]:
 
         now = _utc_now()
@@ -67,9 +95,10 @@ class CustomOCSFClassRepository:
                     version,
                     schema,
                     created_at,
-                    updated_at
+                    updated_at,
+                    tenant_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     class_id,
@@ -81,12 +110,15 @@ class CustomOCSFClassRepository:
                     json.dumps(schema),
                     now,
                     now,
+                    tenant_id,
                 ),
             )
 
-        return self.get_class(class_id)
+        return self.get_class(class_id, tenant_id)
 
-    def get_class(self, class_id: str) -> Optional[Dict[str, Any]]:
+    def get_class(
+        self, class_id: str, tenant_id: str = ""
+    ) -> Optional[Dict[str, Any]]:
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -101,9 +133,9 @@ class CustomOCSFClassRepository:
                     created_at,
                     updated_at
                 FROM custom_ocsf_classes
-                WHERE id = ?
+                WHERE id = ? AND tenant_id = ?
                 """,
-                (class_id,),
+                (class_id, tenant_id),
             ).fetchone()
 
         if row is None:
@@ -124,6 +156,7 @@ class CustomOCSFClassRepository:
     def list_classes(
         self,
         organization: Optional[str] = None,
+        tenant_id: str = "",
     ) -> List[Dict[str, Any]]:
 
         with self._connect() as connection:
@@ -141,10 +174,10 @@ class CustomOCSFClassRepository:
                         created_at,
                         updated_at
                     FROM custom_ocsf_classes
-                    WHERE organization = ?
+                    WHERE tenant_id = ? AND organization = ?
                     ORDER BY created_at DESC
                     """,
-                    (organization,),
+                    (tenant_id, organization),
                 ).fetchall()
             else:
                 rows = connection.execute(
@@ -160,8 +193,10 @@ class CustomOCSFClassRepository:
                         created_at,
                         updated_at
                     FROM custom_ocsf_classes
+                    WHERE tenant_id = ?
                     ORDER BY created_at DESC
-                    """
+                    """,
+                    (tenant_id,),
                 ).fetchall()
 
         return [

@@ -21,6 +21,7 @@ import pytest
 from src.monitoring.metrics import MetricsCollector
 import src.main as main_mod
 from src.main import app
+from tests.auth_helpers import auth_headers
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 REQUIRED_PLATFORMS = ["splunk", "sentinel", "ecs", "qradar", "logscale"]
@@ -252,6 +253,7 @@ def client():
         from fastapi.testclient import TestClient
 
         with TestClient(app) as test_client:
+            test_client.headers.update(auth_headers())
             yield test_client
     except Exception:  # pragma: no cover - fastapi must be installed
         pytest.skip("fastapi is not installed")

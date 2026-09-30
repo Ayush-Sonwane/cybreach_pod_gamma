@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 import src.main as main
 from src.service.history_store import RevalidationHistoryStore
+from tests.auth_helpers import auth_headers
 from tests.samples import EVENT_ID, FIXED_EVENT, FLAWED_EVENT, VENDOR
 
 
@@ -11,7 +12,11 @@ from tests.samples import EVENT_ID, FIXED_EVENT, FLAWED_EVENT, VENDOR
 def client(tmp_path, monkeypatch):
     store = RevalidationHistoryStore(str(tmp_path / "api.db"))
     monkeypatch.setattr(main, "store", store)
-    return TestClient(main.app)
+    test_client = TestClient(main.app)
+    # B11: /api/v2 is JWT-gated. The unauthenticated-rejection tests build
+    # their own client without these headers.
+    test_client.headers.update(auth_headers())
+    return test_client
 
 
 def test_home(client):

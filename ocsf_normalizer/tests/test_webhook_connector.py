@@ -23,6 +23,7 @@ from src.validator import OCSFValidator
 from src.webhook.repository import ConnectorRepository
 from src.webhook.security import WebhookSecurity
 from src.webhook.validator import WebhookSchemaValidator
+from tests.auth_helpers import authed_client
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -488,7 +489,13 @@ def client(tmp_path, monkeypatch):
     # token is env-only with no committed default, so it is injected here for
     # the duration of the test.
     monkeypatch.setenv("WEBHOOK_ADMIN_TOKEN", "test-admin-token")
-    repo.create_connector("c1", "Demo SIEM", "s3cr3t")
+    # B11: the connector is created with the tenant that the test suite's
+    # JWT names, so the operator routes (which filter by tenant) can see it.
+    # The ingest path uses get_connector(id) without tenant filter, so it works
+    # regardless of the tenant_id value here.
+    from tests.auth_helpers import TEST_TENANT_ID
+
+    repo.create_connector("c1", "Demo SIEM", "s3cr3t", tenant_id=TEST_TENANT_ID)
     return TestClient(app)
 
 
@@ -572,19 +579,34 @@ def test_ingest_rejects_schema_invalid_payload(client):
     assert response.json()["detail"]["code"] == "SCHEMA_VALIDATION_FAILED"
 
 
+@pytest.fixture
+def authed_operator_client(client):
+    """Client with module JWT for operator routes (/api/v2/webhook/health, connectors).
+
+    The base `client` fixture is used by ingest tests which authenticate via
+    per-connector secret headers. Operator routes require the module JWT
+    instead. This fixture wraps the same client app with auth headers.
+    """
+    from tests.auth_helpers import auth_headers
+
+    authed = TestClient(app)
+    authed.headers.update(auth_headers())
+    return authed
+
+
 @skip_without_fastapi
-def test_health_endpoint_returns_counters(client):
-    client.post(
+def test_health_endpoint_returns_counters(authed_operator_client):
+    authed_operator_client.post(
         "/api/v2/webhook/ingest",
         json={"event_type": "auth", "event_time": "2024-01-01T10:00:00Z", "user": "x"},
         headers={"X-Connector-Id": "c1", "X-Webhook-Secret": "s3cr3t"},
     )
-    client.post(
+    authed_operator_client.post(
         "/api/v2/webhook/ingest",
         json={"event_type": "auth"},
         headers={"X-Connector-Id": "c1", "X-Webhook-Secret": "s3cr3t"},
     )
-    response = client.get("/api/v2/webhook/health")
+    response = authed_operator_client.get("/api/v2/webhook/health")
     assert response.status_code == 200
     connectors = response.json()["connectors"]
     assert len(connectors) == 1
@@ -595,17 +617,17 @@ def test_health_endpoint_returns_counters(client):
 
 
 @skip_without_fastapi
-def test_connector_management_endpoints(client):
+def test_connector_management_endpoints(authed_operator_client):
     admin = {"X-Admin-Token": "test-admin-token"}
-    create = client.post("/api/v2/webhook/connectors", json={
+    create = authed_operator_client.post("/api/v2/webhook/connectors", json={
         "id": "c2", "name": "Second SIEM", "secret": "abc123", "hmac_enabled": True,
     }, headers=admin)
     assert create.status_code == 200
-    duplicate = client.post("/api/v2/webhook/connectors", json={
+    duplicate = authed_operator_client.post("/api/v2/webhook/connectors", json={
         "id": "c2", "name": "Duplicate", "secret": "x",
     }, headers=admin)
     assert duplicate.status_code == 409
-    listed = client.get("/api/v2/webhook/connectors")
+    listed = authed_operator_client.get("/api/v2/webhook/connectors")
     assert listed.status_code == 200
     ids = [c["id"] for c in listed.json()["connectors"]]
     assert "c2" in ids
@@ -613,16 +635,16 @@ def test_connector_management_endpoints(client):
 
 
 @skip_without_fastapi
-def test_connector_registration_requires_admin_token(client):
+def test_connector_registration_requires_admin_token(authed_operator_client):
     """N-G10: the open registration endpoint was the hole under the per-connector
     HMAC guard, so registering a connector now needs the admin token."""
     body = {"id": "c3", "name": "Unauthorised SIEM", "secret": "abc123"}
 
-    anonymous = client.post("/api/v2/webhook/connectors", json=body)
+    anonymous = authed_operator_client.post("/api/v2/webhook/connectors", json=body)
     assert anonymous.status_code == 401
     assert anonymous.json()["detail"]["code"] == "UNAUTHORIZED"
 
-    wrong = client.post(
+    wrong = authed_operator_client.post(
         "/api/v2/webhook/connectors",
         json=body,
         headers={"X-Admin-Token": "not-the-token"},
@@ -630,7 +652,7 @@ def test_connector_registration_requires_admin_token(client):
     assert wrong.status_code == 401
 
     # ...and the rejected connector was not created.
-    listed = client.get("/api/v2/webhook/connectors")
+    listed = authed_operator_client.get("/api/v2/webhook/connectors")
     assert "c3" not in [c["id"] for c in listed.json()["connectors"]]
 
 

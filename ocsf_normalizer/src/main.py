@@ -4,13 +4,14 @@ from contextlib import asynccontextmanager
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi import Depends, FastAPI, HTTPException, Header, Request
 from pydantic import BaseModel, Field
 
 from src.normalizer.base import BaseNormalizer, _worker_init
 from src.validator import OCSFValidator
 from src.detector import SchemaDetector
 from src.dlq import DeadLetterQueue
+from src.security import get_current_claims, get_current_tenant
 from src.webhook.repository import ConnectorRepository
 from src.webhook.security import WebhookSecurity, verify_admin_token
 from src.webhook.validator import WebhookSchemaValidator
@@ -86,8 +87,19 @@ def home():
     }
 
 
-@app.post("/api/v2/ocsf/normalize")
-def normalize(request: NormalizeRequest):
+# B11: the operator routes below require the module's shared JWT. The guard is
+# declared per-route rather than as an app-level `dependencies=` so `/` stays
+# reachable without a credential, and so `/api/v2/webhook/ingest` -- whose
+# callers are external SIEMs holding a per-connector secret rather than a module
+# JWT -- keeps its own authentication model.
+_REAUTH = [Depends(get_current_claims)]
+
+
+@app.post("/api/v2/ocsf/normalize", dependencies=_REAUTH)
+def normalize(
+    request: NormalizeRequest,
+    tenant_id: str = Depends(get_current_tenant),
+):
     start = time.perf_counter()
     try:
         event = normalizer.process_log(request.log)
@@ -111,8 +123,11 @@ def normalize(request: NormalizeRequest):
 # Custom OCSF Class Registry
 # ============================================================
 
-@app.post("/api/v2/ocsf/normalize/batch")
-def normalize_batch(request: NormalizeBatchRequest):
+@app.post("/api/v2/ocsf/normalize/batch", dependencies=_REAUTH)
+def normalize_batch(
+    request: NormalizeBatchRequest,
+    tenant_id: str = Depends(get_current_tenant),
+):
     """
     Batch normalization mode: normalizes many raw vendor events in parallel
     using the shared startup process pool, preserving input order.
@@ -149,12 +164,18 @@ def normalize_batch(request: NormalizeBatchRequest):
     "/api/v2/ocsf/classes",
     response_model=CustomOCSFClassResponse,
     status_code=201,
+    dependencies=_REAUTH,
 )
 def register_custom_ocsf_class(
     request: CustomOCSFClassRegistration,
+    tenant_id: str = Depends(get_current_tenant),
 ):
     """
     Register a custom OCSF class/schema for an organization.
+
+    B11: the owning tenant comes from the verified JWT, not from
+    `request.organization` -- otherwise a caller could file a class under
+    another tenant's organization and read it back.
     """
 
     import uuid
@@ -170,6 +191,7 @@ def register_custom_ocsf_class(
             category_uid=request.category_uid,
             version=request.version,
             schema=request.schema,
+            tenant_id=tenant_id,
         )
 
     except Exception as e:
@@ -208,31 +230,40 @@ def register_custom_ocsf_class(
     }
 
 
-@app.get("/api/v2/ocsf/classes")
+@app.get("/api/v2/ocsf/classes", dependencies=_REAUTH)
 def list_custom_ocsf_classes(
     organization: str | None = None,
+    tenant_id: str = Depends(get_current_tenant),
 ):
     """
     List registered custom OCSF classes.
 
     If organization is provided, only that organization's
-    custom classes are returned.
+    custom classes are returned. B11: the result is additionally confined to
+    the calling tenant, so `organization` narrows within a tenant rather than
+    selecting across tenants.
     """
 
     return {
         "classes": custom_ocsf_repository.list_classes(
-            organization=organization
+            organization=organization,
+            tenant_id=tenant_id,
         )
     }
 
 
-@app.get("/api/v2/ocsf/classes/{class_id}")
-def get_custom_ocsf_class(class_id: str):
+@app.get("/api/v2/ocsf/classes/{class_id}", dependencies=_REAUTH)
+def get_custom_ocsf_class(
+    class_id: str,
+    tenant_id: str = Depends(get_current_tenant),
+):
     """
     Retrieve a registered custom OCSF class by ID.
+
+    B11: another tenant's class id returns 404, not the class.
     """
 
-    custom_class = custom_ocsf_repository.get_class(class_id)
+    custom_class = custom_ocsf_repository.get_class(class_id, tenant_id)
 
     if custom_class is None:
         raise HTTPException(
@@ -392,25 +423,36 @@ async def webhook_ingest(
     return event.model_dump()
 
 
-@app.get("/api/v2/webhook/health")
-def webhook_health():
+@app.get("/api/v2/webhook/health", dependencies=_REAUTH)
+def webhook_health(tenant_id: str = Depends(get_current_tenant)):
     """
     Health monitoring for the generic webhook connector.
 
     Returns persisted per-connector delivery counters (delivered, valid,
     invalid, auth failures, dead-lettered events and average latency).
+
+    B11: scoped to the calling tenant, so these counters cannot be used to
+    fingerprint another tenant's delivery volume.
     """
     return {
-        "connectors": connector_repository.get_health(),
+        "connectors": connector_repository.get_health(tenant_id),
     }
 
 
-@app.post("/api/v2/webhook/connectors")
+@app.post("/api/v2/webhook/connectors", dependencies=_REAUTH)
 def create_webhook_connector(
     request: WebhookConnectorRequest,
+    tenant_id: str = Depends(get_current_tenant),
     x_admin_token: str = Header(None, alias="X-Admin-Token"),
 ):
-    """Registers a new webhook connector with its own shared secret."""
+    """Registers a new webhook connector with its own shared secret.
+
+    Two credentials are required, and they check different things. The module
+    JWT (B11) says *who the caller is* and scopes the connector to their tenant;
+    `X-Admin-Token` says *whether this caller may administer connectors at
+    all*. Both are required -- the admin token alone would let any holder create
+    connectors outside their tenant.
+    """
     if not verify_admin_token(x_admin_token):
         raise HTTPException(
             status_code=401,
@@ -426,6 +468,7 @@ def create_webhook_connector(
             secret=request.secret,
             hmac_enabled=request.hmac_enabled,
             is_active=request.is_active,
+            tenant_id=tenant_id,
         )
     except Exception:
         raise HTTPException(
@@ -443,22 +486,30 @@ def create_webhook_connector(
     }
 
 
-@app.get("/api/v2/webhook/connectors")
-def list_webhook_connectors():
-    """Lists registered webhook connectors (secrets are never returned)."""
+@app.get("/api/v2/webhook/connectors", dependencies=_REAUTH)
+def list_webhook_connectors(tenant_id: str = Depends(get_current_tenant)):
+    """Lists registered webhook connectors (secrets are never returned).
+
+    B11: scoped to the calling tenant.
+    """
     return {
-        "connectors": connector_repository.list_connectors(),
+        "connectors": connector_repository.list_connectors(tenant_id),
     }
 
 
-@app.get("/api/v2/ocsf/normalize/metrics")
-def normalization_metrics():
+@app.get("/api/v2/ocsf/normalize/metrics", dependencies=_REAUTH)
+def normalization_metrics(tenant_id: str = Depends(get_current_tenant)):
     """
     Normalization performance monitoring.
 
     Returns throughput (events/sec over a rolling window and lifetime) and
     processing latency statistics (min/avg/max/p95) for single-event and
     batch normalization requests.
+
+    B11: the collector is process-wide, so this endpoint is authenticated and
+    tenant-checked; the counters themselves are not per-tenant, which is a
+    known limitation of the shared collector rather than a data leak in this
+    route.
     """
     return metrics.snapshot()
 
