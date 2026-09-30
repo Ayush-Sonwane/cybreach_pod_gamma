@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package cybreach.services;
+
+option py_generic_services = true;
+
+service NormalizationService {
+  rpc Normalize(NormalizeRequest) returns (NormalizeResponse);
+  rpc HealthCheck(HealthRequest) returns (HealthResponse);
+}
+
+service RevalidationService {
+  rpc Revalidate(RevalidateRequest) returns (RevalidateResponse);
+  rpc HealthCheck(HealthRequest) returns (HealthResponse);
+}
+
+message HealthRequest {
+  string service_name = 1;
+}
+
+message HealthResponse {
+  string status = 1;
+  string service = 2;
+  int64 timestamp = 3;
+  string version = 4;
+}
+
+message NormalizeRequest {
+  string tenant_id = 1;
+  string evidence_id = 2;
+  string source_format = 3;
+  bytes raw_data = 4;
+}
+
+message NormalizeResponse {
+  string evidence_id = 1;
+  bytes normalized_event = 2;
+  string status = 3;
+  string error_detail = 4;
+}
+
+message RevalidateRequest {
+  string tenant_id = 1;
+  string verdict_id = 2;
+  bytes evidence_data = 3;
+  repeated string original_rules = 4;
+}
+
+message RevalidateResponse {
+  string verdict_id = 1;
+  bool still_valid = 2;
+  repeated string current_rules = 3;
+  string status = 4;
+  string gap_closed = 5;
+}

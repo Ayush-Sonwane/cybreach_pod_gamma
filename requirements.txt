@@ -1,35 +1,9 @@
-# Gamma root manifest.
-#
-# M6: this file used to be a second, unpinned set
-# (`fastapi>=0.100.0`, `pydantic>=2.0.0`, `uvicorn>=0.22.0`, `pytest>=7.0.0`,
-# `httpx>=0.24.0`, plus `aiokafka`, `redis`, `asyncpg` and `pytest-asyncio`)
-# that contradicted the pinned set the pod's own two services install, so
-# `pip install -r requirements.txt` at the pod root did not produce the
-# environment CI actually runs -- and CI is what gates the 4452 tests.
-#
-# It is now byte-for-byte the same set as both service manifests:
-#
-#   ocsf_normalizer/requirements.txt
-#   revalidation_service/requirements.txt
-#
-# `aiokafka`, `redis`, `asyncpg` and `pytest-asyncio` were dropped rather than
-# pinned: nothing under either service imports them, and the test suites carry
-# no `@pytest.mark.asyncio` marker, so they were install weight only.
-#
-# `httpx` is not imported by name either, but `fastapi.testclient.TestClient`
-# needs it and several suites use it (`test_batch_normalization.py:134`,
-# `test_custom_ocsf_api.py:2`, `test_webhook_connector.py:467`), so it stays.
-#
-# `python-jose` was added by B11 once both services started verifying the
-# module's shared HS256 JWT on their /api/v2 routes; it is now a real import in
-# both `src/security.py` files rather than something that happened to be present
-# in the environment.
-#
-# The one thing this manifest deliberately does NOT do is adopt a version set
-# shared with the other three pods. That reconciliation is still open.
 fastapi == 0.141.1
 pydantic == 2.13.4
 uvicorn == 0.52.2
 pytest == 9.1.1
 httpx >= 0.27.0
 python-jose == 3.5.0
+grpcio==1.68.0
+grpcio-tools==1.68.0
+protobuf==5.28.0
