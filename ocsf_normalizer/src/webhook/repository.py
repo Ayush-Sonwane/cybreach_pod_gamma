@@ -13,8 +13,15 @@ class ConnectorRepository:
     Persists webhook connector configuration and delivery health counters.
 
     Uses the existing SQLite persistence pattern from the revalidation
-    service (raw sqlite3, no ORM). No separate store is introduced: connector
-    config and health metrics live in the same connectors database.
+    service (raw sqlite3, no ORM). No separate store is introduced: the ingest
+    credential and the health metrics live in the same local database file.
+
+    M3: this is NOT the canonical connector registry. Alpha owns that one, and
+    the two local tables here are named so they can never be confused with it -
+    `webhook_connector_credentials` (the per-connector shared secret and HMAC
+    flag that `/api/v2/webhook/ingest` authenticates with, which Alpha's
+    registry does not model) and `webhook_health` (local delivery counters).
+    See `contracts/CONNECTOR_FRAMEWORK.md`.
 
     B11: connectors are tenant-scoped, but the two callers of this repository
     have different identities and the difference matters:
@@ -42,9 +49,28 @@ class ConnectorRepository:
 
     def _create_tables(self) -> None:
         with self._connect() as connection:
+            # M3: Alpha owns the canonical `connectors` registry table
+            # (`contracts/CONNECTOR_FRAMEWORK.md`). This repository's table is
+            # not that registry -- it holds the per-connector webhook ingest
+            # credential (shared secret and HMAC flag) that Alpha's registry does
+            # not model, which is why it cannot simply be deleted. It is renamed
+            # to say what it is, so that in a merged database it cannot collide
+            # with Alpha's `connectors` or be mistaken for a second registry.
+            # Databases written before the rename carry the old table name;
+            # SQLite rewrites `webhook_health`'s foreign key along with it.
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            if "connectors" in tables and "webhook_connector_credentials" not in tables:
+                connection.execute(
+                    "ALTER TABLE connectors RENAME TO webhook_connector_credentials"
+                )
             connection.execute(
                 """
-                CREATE TABLE IF NOT EXISTS connectors (
+                CREATE TABLE IF NOT EXISTS webhook_connector_credentials (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     secret TEXT NOT NULL,
@@ -68,7 +94,7 @@ class ConnectorRepository:
                     last_seen TEXT,
                     last_status TEXT,
                     last_error TEXT,
-                    FOREIGN KEY (connector_id) REFERENCES connectors (id)
+                    FOREIGN KEY (connector_id) REFERENCES webhook_connector_credentials (id)
                 )
                 """
             )
@@ -78,14 +104,19 @@ class ConnectorRepository:
             # rather than being surfaced to whichever tenant lists first.
             columns = {
                 row[1]
-                for row in connection.execute("PRAGMA table_info(connectors)").fetchall()
+                for row in connection.execute(
+                    "PRAGMA table_info(webhook_connector_credentials)"
+                ).fetchall()
             }
             if "tenant_id" not in columns:
                 connection.execute(
-                    "ALTER TABLE connectors ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ''"
+                    "ALTER TABLE webhook_connector_credentials "
+                    "ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ''"
                 )
+            connection.execute("DROP INDEX IF EXISTS idx_connectors_tenant")
             connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_connectors_tenant ON connectors(tenant_id)"
+                "CREATE INDEX IF NOT EXISTS idx_webhook_connector_credentials_tenant "
+                "ON webhook_connector_credentials(tenant_id)"
             )
 
     # ---------------------------------------------------------------
@@ -104,7 +135,7 @@ class ConnectorRepository:
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO connectors (
+                INSERT INTO webhook_connector_credentials (
                     id, name, secret, hmac_enabled, is_active, created_at, tenant_id
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -131,7 +162,7 @@ class ConnectorRepository:
             row = connection.execute(
                 """
                 SELECT id, name, secret, hmac_enabled, is_active, created_at
-                FROM connectors
+                FROM webhook_connector_credentials
                 WHERE id = ?
                 """,
                 (connector_id,),
@@ -153,7 +184,7 @@ class ConnectorRepository:
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT id, name, secret, hmac_enabled, is_active, created_at "
-                "FROM connectors WHERE tenant_id = ? ORDER BY id",
+                "FROM webhook_connector_credentials WHERE tenant_id = ? ORDER BY id",
                 (tenant_id,),
             ).fetchall()
         connectors = []
@@ -174,11 +205,11 @@ class ConnectorRepository:
         with self._connect() as connection:
             connection.execute(
                 "DELETE FROM webhook_health WHERE connector_id = ? AND connector_id IN "
-                "(SELECT id FROM connectors WHERE id = ? AND tenant_id = ?)",
+                "(SELECT id FROM webhook_connector_credentials WHERE id = ? AND tenant_id = ?)",
                 (connector_id, connector_id, tenant_id),
             )
             connection.execute(
-                "DELETE FROM connectors WHERE id = ? AND tenant_id = ?",
+                "DELETE FROM webhook_connector_credentials WHERE id = ? AND tenant_id = ?",
                 (connector_id, tenant_id),
             )
 
@@ -243,8 +274,9 @@ class ConnectorRepository:
     def get_health(self, tenant_id: str = "") -> List[Dict[str, Any]]:
         """Delivery counters for this tenant's connectors.
 
-        Scoped by joining `connectors` rather than by filtering `connector_id`
-        alone, so a tenant cannot read another tenant's delivery counters.
+    Scoped by joining `webhook_connector_credentials` rather than by filtering
+    `connector_id` alone, so a tenant cannot read another tenant's delivery
+    counters.
         """
         with self._connect() as connection:
             rows = connection.execute(
@@ -254,7 +286,7 @@ class ConnectorRepository:
                     h.auth_failures, h.dlq_count, h.total_latency_ms,
                     h.last_seen, h.last_status, h.last_error
                 FROM webhook_health h
-                JOIN connectors c ON c.id = h.connector_id
+                JOIN webhook_connector_credentials c ON c.id = h.connector_id
                 WHERE c.tenant_id = ?
                 ORDER BY h.connector_id
                 """,
@@ -288,7 +320,7 @@ class ConnectorRepository:
                     h.auth_failures, h.dlq_count, h.total_latency_ms,
                     h.last_seen, h.last_status, h.last_error
                 FROM webhook_health h
-                JOIN connectors c ON c.id = h.connector_id
+                JOIN webhook_connector_credentials c ON c.id = h.connector_id
                 WHERE h.connector_id = ? AND c.tenant_id = ?
                 """,
                 (connector_id, tenant_id),
